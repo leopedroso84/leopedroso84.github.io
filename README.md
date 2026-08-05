@@ -1,16 +1,38 @@
-# leopedroso84.github.io
+# Site profissional — Leandro Pedroso
 
-Site profissional pessoal de Leandro Pedroso, publicado pelo GitHub Pages.
+Portfólio profissional publicado em:
 
-## Publicação
+**https://leopedroso84.github.io**
 
-1. Crie um repositório público chamado exatamente `leopedroso84.github.io`.
-2. Envie todos os arquivos deste pacote para a raiz do repositório.
-3. Acesse **Settings → Pages**.
-4. Em **Build and deployment**, selecione **Deploy from a branch**.
-5. Selecione a branch **main** e a pasta **/(root)**.
-6. Clique em **Save**.
+## Arquivos
 
-O site ficará disponível em:
+- `index.html` — página principal
+- `styles.css` — visual e responsividade
+- `script.js` — menu, animações e projetos do GitHub
+- `privacidade.html` — política de privacidade
+- `favicon.svg` — ícone do site
+- `.nojekyll` — publicação direta no GitHub Pages
 
-https://leopedroso84.github.io
+## Como atualizar
+
+1. Extraia o arquivo ZIP.
+2. No repositório `leopedroso84.github.io`, escolha **Add file → Upload files**.
+3. Envie todos os arquivos para a raiz.
+4. Confirme **Commit changes**.
+5. Aguarde de 1 a 5 minutos.
+
+O GitHub Pages publicará automaticamente a nova versão.
+
+## Personalização rápida
+
+Os principais dados ficam em `index.html`:
+
+- título e apresentação;
+- telefone do WhatsApp;
+- e-mail;
+- competências;
+- experiência.
+
+A lista de projetos é carregada automaticamente do perfil público:
+
+`https://github.com/leopedroso84`
