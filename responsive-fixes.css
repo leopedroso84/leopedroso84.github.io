@@ -47,6 +47,31 @@
   object-position: center !important;
 }
 
+/* CONTATO: canais identificados pela ação, sem expor endereço ou número na interface. */
+.contact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 13px;
+  margin-top: 31px;
+}
+.contact-button {
+  gap: 10px;
+  min-width: 168px;
+}
+.contact-button svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.contact-button .contact-label {
+  line-height: 1;
+}
+
 @media (max-width: 850px) {
   .person-image {
     width: min(100%, 410px) !important;
@@ -80,5 +105,21 @@
     height: 100% !important;
     object-fit: contain !important;
     object-position: center !important;
+  }
+
+  .contact-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .contact-button {
+    min-width: 0;
+    width: 100%;
+    padding-inline: 14px;
+  }
+}
+
+@media (max-width: 390px) {
+  .contact-actions {
+    grid-template-columns: 1fr;
   }
 }
