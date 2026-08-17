@@ -1,5 +1,6 @@
 /* Correções responsivas complementares — Pedroso Tech */
 
+/* HERO: preserva a foto completa em desktop e mobile. */
 .hero-photo {
   aspect-ratio: auto !important;
 }
@@ -16,17 +17,42 @@
   object-position: center !important;
 }
 
+/* QUEM ESTÁ POR TRÁS: quadro de retrato com altura controlada.
+   A imagem inteira cabe dentro do quadro sem virar uma coluna de 1200px. */
+.person-image {
+  width: min(100%, 410px) !important;
+  aspect-ratio: 4 / 5 !important;
+  max-width: 410px !important;
+  height: auto !important;
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0d141e;
+}
 .person-image picture {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
+  height: 100%;
 }
 .person-image img {
   display: block;
-  width: 100%;
-  height: auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
   aspect-ratio: auto !important;
   object-fit: contain !important;
   object-position: center !important;
+}
+
+@media (max-width: 850px) {
+  .person-image {
+    width: min(100%, 410px) !important;
+    aspect-ratio: 4 / 5 !important;
+    margin-inline: auto;
+  }
 }
 
 @media (max-width: 640px) {
@@ -42,5 +68,17 @@
     object-fit: contain !important;
     object-position: center !important;
     border-radius: 0;
+  }
+
+  .person-image {
+    width: 100% !important;
+    max-width: 410px !important;
+    aspect-ratio: 4 / 5 !important;
+  }
+  .person-image img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
+    object-position: center !important;
   }
 }
