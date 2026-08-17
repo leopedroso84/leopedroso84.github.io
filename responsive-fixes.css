@@ -51,12 +51,14 @@
 .contact-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: stretch;
   gap: 13px;
   margin-top: 31px;
 }
 .contact-button {
   gap: 10px;
-  min-width: 168px;
+  min-width: 156px;
+  white-space: nowrap;
 }
 .contact-button svg {
   width: 20px;
@@ -69,7 +71,11 @@
   stroke-linejoin: round;
 }
 .contact-button .contact-label {
+  display: inline-block;
   line-height: 1;
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
 }
 
 @media (max-width: 850px) {
@@ -108,18 +114,20 @@
   }
 
   .contact-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    flex-wrap: wrap;
   }
   .contact-button {
-    min-width: 0;
-    width: 100%;
-    padding-inline: 14px;
+    width: auto !important;
+    min-width: 156px !important;
+    flex: 0 0 auto;
+    padding-inline: 18px;
   }
 }
 
-@media (max-width: 390px) {
-  .contact-actions {
-    grid-template-columns: 1fr;
+@media (max-width: 360px) {
+  .contact-button {
+    width: 100% !important;
+    min-width: 0 !important;
   }
 }
