@@ -1,0 +1,18 @@
+Audit shortcut f24ba67795624fdb88d11932b1c95840
+Name: Gerenciamento de Rede e Bateria
+Signing: APPROVED
+SHA256: 227a5b2b72b195d9e2b657366f24fdec78c4bb1e38133f55ec5deb447a54c432
+Triggers: 5
+Actions: 55
+Trigger 1: Wi-Fi disconnected
+Trigger 2: Wi-Fi joined
+Trigger 3: Battery falls_below 30.0
+Trigger 4: Plug-in trigger with empty serialized parameters
+Trigger 5: Plug-in disconnect
+Wi-Fi branch: VIVO on; VIVO voice default; VIVO data default; cellular data off; TIM off
+No-WiFi high-battery branch: VIVO on/voice/data; cellular data on; TIM on; wait 2s; TIM data default
+No-WiFi charging branch: same high-battery behavior
+No-WiFi connected-to-charger branch: same high-battery behavior
+No-WiFi low-battery branch: Low Power Mode on; VIVO on/voice/data; cellular data on; TIM off
+Only VIVO and TIM plan identifiers appear in cellular plan actions; Empresarial and Wconect do not appear
+Low Power Mode actions with omitted OnValue rely on default true
