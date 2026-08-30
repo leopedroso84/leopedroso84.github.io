@@ -9,87 +9,34 @@ jobs:
   audit:
     runs-on: macos-latest
     steps:
-      - name: Download and inspect shortcut
+      - name: Inspect shortcut triggers
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import json, urllib.request, plistlib, hashlib
-
           sid='9e544cb80eb2442ab0d2b3d72544f664'
           api=f'https://www.icloud.com/shortcuts/api/records/{sid}'
-          req=urllib.request.Request(api,headers={'User-Agent':'Mozilla/5.0'})
-          with urllib.request.urlopen(req,timeout=30) as r:
+          with urllib.request.urlopen(urllib.request.Request(api,headers={'User-Agent':'Mozilla/5.0'}),timeout=30) as r:
               meta=json.load(r)
-
-          print('META_KEYS',sorted(meta.keys()))
-          fields=meta.get('fields',{}) if isinstance(meta,dict) else {}
-          if fields:
-              for k in ['name','signingStatus','signingCertificateExpirationDate','shortcut','signedShortcut']:
-                  if k in fields:
-                      v=fields[k].get('value') if isinstance(fields[k],dict) else fields[k]
-                      if k in ('shortcut','signedShortcut') and isinstance(v,dict):
-                          print(k,'size=',v.get('size'),'checksum=',v.get('fileChecksum'),'downloadURL_present=',bool(v.get('downloadURL')))
-                      else:
-                          print(k,repr(v))
-
-          dl=None
-          for key in ['shortcut','signedShortcut']:
-              v=fields.get(key,{}).get('value',{}) if isinstance(fields.get(key),dict) else {}
-              if isinstance(v,dict) and v.get('downloadURL'):
-                  dl=v['downloadURL']; print('USING',key); break
-          if not dl: raise SystemExit('No downloadURL found')
-
-          req=urllib.request.Request(dl,headers={'User-Agent':'Mozilla/5.0'})
-          with urllib.request.urlopen(req,timeout=30) as r:
+          fields=meta['fields']
+          print('NAME',repr(fields.get('name',{}).get('value')))
+          print('SIGNING_STATUS',repr(fields.get('signingStatus',{}).get('value')))
+          v=fields['shortcut']['value']
+          print('SHORTCUT_SIZE',v.get('size'))
+          print('SHORTCUT_CHECKSUM',v.get('fileChecksum'))
+          with urllib.request.urlopen(urllib.request.Request(v['downloadURL'],headers={'User-Agent':'Mozilla/5.0'}),timeout=30) as r:
               raw=r.read()
-          print('BYTES',len(raw))
           print('SHA256',hashlib.sha256(raw).hexdigest())
-          print('HEADER',raw[:8])
-
-          try:
-              obj=plistlib.loads(raw)
-          except Exception as e:
-              print('PLIST_ERROR',repr(e))
-              # if signedShortcut was chosen and unreadable, retry unsigned shortcut
-              v=fields.get('shortcut',{}).get('value',{}) if isinstance(fields.get('shortcut'),dict) else {}
-              if not (isinstance(v,dict) and v.get('downloadURL')): raise
-              req=urllib.request.Request(v['downloadURL'],headers={'User-Agent':'Mozilla/5.0'})
-              with urllib.request.urlopen(req,timeout=30) as r: raw=r.read()
-              print('RETRY_UNSIGNED_BYTES',len(raw))
-              print('RETRY_UNSIGNED_SHA256',hashlib.sha256(raw).hexdigest())
-              obj=plistlib.loads(raw)
-
-          print('TOP_KEYS',sorted(obj.keys()) if isinstance(obj,dict) else type(obj).__name__)
-          actions=obj.get('WFWorkflowActions',[]) if isinstance(obj,dict) else []
-          print('ACTION_COUNT',len(actions))
-          for k in ['WFWorkflowClientVersion','WFWorkflowClientRelease','WFWorkflowMinimumClientVersion','WFWorkflowMinimumClientVersionString','WFWorkflowTypes','WFWorkflowInputContentItemClasses']:
-              if isinstance(obj,dict) and k in obj: print(k,repr(obj[k]))
-
-          print('=== ACTIONS BEGIN ===')
-          for i,a in enumerate(actions,1):
-              ident=a.get('WFWorkflowActionIdentifier','') if isinstance(a,dict) else ''
-              params=a.get('WFWorkflowActionParameters',{}) if isinstance(a,dict) else {}
-              print(f'[{i:02d}] {ident}')
-              print(json.dumps(params,ensure_ascii=False,sort_keys=True,default=str))
-          print('=== ACTIONS END ===')
-
-          danger_terms=['http://','https://','webhook','ssh','script','shell','runshortcut','clipboard','message','mail','openurl','contentssofurl','download']
-          important_terms=['cellular','mobiledata','wifi','wi-fi','battery','bateria','lowpower','pouca energia','30','29','31','network','rede']
-          danger=[]; important=[]
-          def walk(x,path='root'):
-              if isinstance(x,dict):
-                  for k,v in x.items(): walk(v,path+'.'+str(k))
-              elif isinstance(x,list):
-                  for j,v in enumerate(x): walk(v,path+f'[{j}]')
-              elif isinstance(x,str):
-                  low=x.lower()
-                  if any(t in low for t in danger_terms): danger.append((path,x))
-                  if any(t in low for t in important_terms): important.append((path,x))
-          walk(obj)
-          print('=== DANGER HITS ===')
-          for p,v in danger: print(p,'=>',v)
-          print('=== IMPORTANT HITS ===')
-          for p,v in important: print(p,'=>',v)
-          print('=== END ===')
+          obj=plistlib.loads(raw)
+          print('TRIGGER_COUNT',len(obj.get('WFWorkflowTriggers',[])))
+          print('=== TRIGGERS BEGIN ===')
+          for i,t in enumerate(obj.get('WFWorkflowTriggers',[]),1):
+              print(f'[{i:02d}]')
+              print(json.dumps(t,ensure_ascii=False,sort_keys=True,default=str))
+          print('=== TRIGGERS END ===')
+          print('IMPORT_QUESTIONS',json.dumps(obj.get('WFWorkflowImportQuestions',[]),ensure_ascii=False,sort_keys=True,default=str))
+          print('QUICK_ACTION_SURFACES',json.dumps(obj.get('WFQuickActionSurfaces',[]),ensure_ascii=False,sort_keys=True,default=str))
+          print('HAS_SHORTCUT_INPUT_VARS',repr(obj.get('WFWorkflowHasShortcutInputVariables')))
+          print('HAS_OUTPUT_FALLBACK',repr(obj.get('WFWorkflowHasOutputFallback')))
           PY
