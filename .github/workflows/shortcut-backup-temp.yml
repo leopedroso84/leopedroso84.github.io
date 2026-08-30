@@ -7,13 +7,13 @@ jobs:
   backup:
     runs-on: macos-latest
     steps:
-      - name: Download shortcuts and build manifest
+      - name: Download signed shortcuts and raw backups
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p backup-shortcuts
+          mkdir -p backup-shortcuts/RAW
           python3 - <<'PY'
-          import json, urllib.request, plistlib, hashlib, os, re
+          import json, urllib.request, hashlib, os, re
           shortcuts = [
               ('53c343865a5b491fa70c1e34641da3ac','https://www.icloud.com/shortcuts/53c343865a5b491fa70c1e34641da3ac'),
               ('1f1656fb583d4363a68b0adf518ca287','https://www.icloud.com/shortcuts/1f1656fb583d4363a68b0adf518ca287'),
@@ -21,6 +21,10 @@ jobs:
           ]
           rows=[]
           used=set()
+          def download(v):
+              req=urllib.request.Request(v['downloadURL'],headers={'User-Agent':'Mozilla/5.0'})
+              with urllib.request.urlopen(req,timeout=30) as r:
+                  return r.read()
           for idx,(sid,share_url) in enumerate(shortcuts,1):
               api=f'https://www.icloud.com/shortcuts/api/records/{sid}'
               req=urllib.request.Request(api,headers={'User-Agent':'Mozilla/5.0'})
@@ -29,42 +33,61 @@ jobs:
               fields=meta['fields']
               name=fields.get('name',{}).get('value') or f'Atalho-{idx}'
               signing=fields.get('signingStatus',{}).get('value')
-              v=fields['shortcut']['value']
-              req=urllib.request.Request(v['downloadURL'],headers={'User-Agent':'Mozilla/5.0'})
-              with urllib.request.urlopen(req,timeout=30) as r:
-                  raw=r.read()
-              obj=plistlib.loads(raw)
               safe=re.sub(r'[\\/:*?"<>|]+',' - ',name).strip() or f'Atalho-{idx}'
               base=safe
               n=2
               while safe.lower() in used:
                   safe=f'{base} ({n})'; n+=1
               used.add(safe.lower())
-              path=os.path.join('backup-shortcuts',safe+'.shortcut')
-              open(path,'wb').write(raw)
-              sha=hashlib.sha256(raw).hexdigest()
-              actions=len(obj.get('WFWorkflowActions',[]))
-              triggers=len(obj.get('WFWorkflowTriggers',[]))
-              rows.append((idx,name,safe+'.shortcut',sid,share_url,signing,len(raw),sha,actions,triggers))
-              print(f'[{idx}] NAME={name!r} FILE={safe}.shortcut SIGNING={signing!r} BYTES={len(raw)} SHA256={sha} ACTIONS={actions} TRIGGERS={triggers}')
+
+              unsigned_v=fields['shortcut']['value']
+              unsigned=download(unsigned_v)
+              unsigned_sha=hashlib.sha256(unsigned).hexdigest()
+              raw_name=f'{idx:02d} - {safe} - unsigned.bplist'
+              open(os.path.join('backup-shortcuts','RAW',raw_name),'wb').write(unsigned)
+
+              signed_field=fields.get('signedShortcut',{})
+              signed_v=signed_field.get('value') if isinstance(signed_field,dict) else None
+              if isinstance(signed_v,dict) and signed_v.get('downloadURL'):
+                  signed=download(signed_v)
+                  installable=signed
+                  source='signedShortcut'
+              else:
+                  installable=unsigned
+                  source='shortcut'
+              signed_sha=hashlib.sha256(installable).hexdigest()
+              install_name=f'{idx:02d} - {safe}.shortcut'
+              open(os.path.join('backup-shortcuts',install_name),'wb').write(installable)
+
+              rows.append({
+                  'idx':idx,'name':name,'file':install_name,'sid':sid,'url':share_url,
+                  'signing':signing,'source':source,'signed_size':len(installable),'signed_sha':signed_sha,
+                  'raw_file':'RAW/'+raw_name,'raw_size':len(unsigned),'raw_sha':unsigned_sha,
+              })
+              print(f'[{idx}] NAME={name!r} SIGNING={signing!r} PRIMARY={install_name!r} SOURCE={source} PRIMARY_BYTES={len(installable)} PRIMARY_SHA256={signed_sha} RAW_BYTES={len(unsigned)} RAW_SHA256={unsigned_sha}')
+
           with open('backup-shortcuts/LEIA-ME - Manifesto dos Atalhos.txt','w',encoding='utf-8') as f:
               f.write('BACKUP DOS ATALHOS DO IPHONE\n')
               f.write('Gerado em 2026-08-30\n\n')
-              for idx,name,filename,sid,url,signing,size,sha,actions,triggers in rows:
-                  f.write(f'{idx}. {name}\n')
-                  f.write(f'   Arquivo: {filename}\n')
-                  f.write(f'   Link iCloud: {url}\n')
-                  f.write(f'   ID: {sid}\n')
-                  f.write(f'   Assinatura: {signing}\n')
-                  f.write(f'   Tamanho: {size} bytes\n')
-                  f.write(f'   SHA-256: {sha}\n')
-                  f.write(f'   Ações: {actions}\n')
-                  f.write(f'   Gatilhos: {triggers}\n\n')
+              f.write('Os arquivos .shortcut na raiz deste ZIP são as cópias principais para reinstalação.\n')
+              f.write('A pasta RAW contém as estruturas brutas para recuperação/auditoria.\n\n')
+              for r in rows:
+                  f.write(f"{r['idx']}. {r['name']}\n")
+                  f.write(f"   Arquivo principal: {r['file']}\n")
+                  f.write(f"   Link iCloud: {r['url']}\n")
+                  f.write(f"   ID: {r['sid']}\n")
+                  f.write(f"   Status de assinatura no iCloud: {r['signing']}\n")
+                  f.write(f"   Origem do arquivo principal: {r['source']}\n")
+                  f.write(f"   Tamanho principal: {r['signed_size']} bytes\n")
+                  f.write(f"   SHA-256 principal: {r['signed_sha']}\n")
+                  f.write(f"   Arquivo RAW: {r['raw_file']}\n")
+                  f.write(f"   Tamanho RAW: {r['raw_size']} bytes\n")
+                  f.write(f"   SHA-256 RAW: {r['raw_sha']}\n\n")
           PY
       - name: Upload backup artifact
         uses: actions/upload-artifact@v4
         with:
           name: Atalhos-iPhone-Backup-2026-08-30
-          path: backup-shortcuts/*
+          path: backup-shortcuts/**
           if-no-files-found: error
           retention-days: 7
