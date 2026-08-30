@@ -13,8 +13,34 @@ jobs:
           set -euo pipefail
           rm -rf backup-shortcuts
           mkdir -p backup-shortcuts/RAW
+          cat > /tmp/PlistToJSON.swift <<'SWIFT'
+          import Foundation
+
+          func sanitize(_ value: Any) -> Any {
+              if let dict = value as? [String: Any] {
+                  var out: [String: Any] = [:]
+                  for (k, v) in dict { out[k] = sanitize(v) }
+                  return out
+              }
+              if let arr = value as? [Any] { return arr.map { sanitize($0) } }
+              if let date = value as? Date { return ["__date_reference_seconds": date.timeIntervalSinceReferenceDate] }
+              if let data = value as? Data { return ["__data_base64": data.base64EncodedString()] }
+              if value is NSNull || value is String || value is NSNumber { return value }
+              return String(describing: value)
+          }
+
+          let args = CommandLine.arguments
+          guard args.count == 3 else { exit(2) }
+          let data = try Data(contentsOf: URL(fileURLWithPath: args[1]))
+          var format = PropertyListSerialization.PropertyListFormat.binary
+          let obj = try PropertyListSerialization.propertyList(from: data, options: [], format: &format)
+          let clean = sanitize(obj)
+          let json = try JSONSerialization.data(withJSONObject: clean, options: [.sortedKeys])
+          try json.write(to: URL(fileURLWithPath: args[2]))
+          SWIFT
+
           python3 - <<'PY'
-          import json, urllib.request, hashlib, os, re, subprocess, copy
+          import json, urllib.request, hashlib, os, re, subprocess
 
           shortcuts = [
               ('53c343865a5b491fa70c1e34641da3ac','https://www.icloud.com/shortcuts/53c343865a5b491fa70c1e34641da3ac'),
@@ -30,12 +56,7 @@ jobs:
 
           def scrub(x):
               if isinstance(x,dict):
-                  out={}
-                  for k,v in x.items():
-                      if 'uuid' in k.lower() or k == 'GroupingIdentifier':
-                          continue
-                      out[k]=scrub(v)
-                  return out
+                  return {k:scrub(v) for k,v in x.items() if 'uuid' not in k.lower() and k != 'GroupingIdentifier'}
               if isinstance(x,list):
                   return [scrub(v) for v in x]
               return x
@@ -51,8 +72,7 @@ jobs:
               name=fields.get('name',{}).get('value') or f'Atalho-{idx}'
               signing=fields.get('signingStatus',{}).get('value')
               safe=re.sub(r'[\\/:*?"<>|]+',' - ',name).strip() or f'Atalho-{idx}'
-              base=safe
-              n=2
+              base=safe; n=2
               while safe.lower() in used:
                   safe=f'{base} ({n})'; n+=1
               used.add(safe.lower())
@@ -65,59 +85,53 @@ jobs:
               signed_field=fields.get('signedShortcut',{})
               signed_v=signed_field.get('value') if isinstance(signed_field,dict) else None
               if isinstance(signed_v,dict) and signed_v.get('downloadURL'):
-                  installable=download(signed_v)
-                  source='signedShortcut'
+                  installable=download(signed_v); source='signedShortcut'
               else:
-                  installable=unsigned
-                  source='shortcut'
-              signed_sha=hashlib.sha256(installable).hexdigest()
+                  installable=unsigned; source='shortcut'
+              install_sha=hashlib.sha256(installable).hexdigest()
               install_name=f'{idx:02d} - {safe}.shortcut'
               open(os.path.join('backup-shortcuts',install_name),'wb').write(installable)
 
-              actions=triggers=None
-              structure_sha=None
-              parse_status='NOT_PARSED'
-              json_path=f'/tmp/shortcut-{idx}.json'
               raw_tmp=f'/tmp/shortcut-{idx}.bplist'
+              json_path=f'/tmp/shortcut-{idx}.json'
               open(raw_tmp,'wb').write(unsigned)
+              parse_status='PLUTIL'
               p=subprocess.run(['/usr/bin/plutil','-convert','json','-o',json_path,raw_tmp],capture_output=True,text=True)
+              if p.returncode != 0:
+                  parse_status='FOUNDATION_SWIFT'
+                  p=subprocess.run(['swift','/tmp/PlistToJSON.swift',raw_tmp,json_path],capture_output=True,text=True)
+              actions=triggers=None; structure_sha=None
               if p.returncode==0:
-                  try:
-                      obj=json.load(open(json_path,encoding='utf-8'))
-                      actions=len(obj.get('WFWorkflowActions',[]))
-                      triggers=len(obj.get('WFWorkflowTriggers',[]))
-                      semantic={
-                          'triggers': sorted([scrub(x) for x in obj.get('WFWorkflowTriggers',[])], key=lambda q: json.dumps(q,sort_keys=True,ensure_ascii=False)),
-                          'actions': scrub(obj.get('WFWorkflowActions',[])),
-                      }
-                      structure_sha=hashlib.sha256(json.dumps(semantic,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
-                      parse_status='OK'
-                  except Exception as e:
-                      parse_status=f'JSON_ERROR:{type(e).__name__}'
+                  obj=json.load(open(json_path,encoding='utf-8'))
+                  actions=len(obj.get('WFWorkflowActions',[]))
+                  triggers=len(obj.get('WFWorkflowTriggers',[]))
+                  semantic={
+                      'triggers': sorted([scrub(x) for x in obj.get('WFWorkflowTriggers',[])], key=lambda q: json.dumps(q,sort_keys=True,ensure_ascii=False)),
+                      'actions': scrub(obj.get('WFWorkflowActions',[])),
+                  }
+                  structure_sha=hashlib.sha256(json.dumps(semantic,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
               else:
-                  parse_status='PLUTIL_ERROR'
+                  parse_status='FAILED'
 
               row={
-                  'idx':idx,'sid':sid,'url':share_url,'name':name,'safe':safe,'signing':signing,
-                  'source':source,'install_file':install_name,'install_size':len(installable),'install_sha':signed_sha,
+                  'idx':idx,'sid':sid,'url':share_url,'name':name,'signing':signing,
+                  'install_file':install_name,'source':source,'install_size':len(installable),'install_sha':install_sha,
                   'raw_file':'RAW/'+os.path.basename(raw_path),'raw_size':len(unsigned),'raw_sha':raw_sha,
                   'actions':actions,'triggers':triggers,'structure_sha':structure_sha,'parse_status':parse_status,
               }
               rows.append(row)
               print('SHORTCUT',json.dumps(row,ensure_ascii=False,sort_keys=True))
 
-          # Duplicate checks
-          duplicate_pairs=[]
+          duplicates=[]
           for i in range(len(rows)):
               for j in range(i+1,len(rows)):
-                  a,b=rows[i],rows[j]
-                  reasons=[]
+                  a,b=rows[i],rows[j]; reasons=[]
                   if a['raw_sha']==b['raw_sha']: reasons.append('RAW_SHA256_IDENTICAL')
                   if a['install_sha']==b['install_sha']: reasons.append('SIGNED_SHA256_IDENTICAL')
                   if a['structure_sha'] and a['structure_sha']==b['structure_sha']: reasons.append('STRUCTURE_IDENTICAL')
-                  if reasons:
-                      duplicate_pairs.append((a['idx'],b['idx'],reasons))
-          print('DUPLICATE_PAIRS',json.dumps(duplicate_pairs,ensure_ascii=False))
+                  if reasons: duplicates.append((a['idx'],b['idx'],reasons))
+
+          print('DUPLICATE_PAIRS',json.dumps(duplicates,ensure_ascii=False))
           print('UNIQUE_RAW_HASHES',len({r['raw_sha'] for r in rows}))
           print('UNIQUE_SIGNED_HASHES',len({r['install_sha'] for r in rows}))
           print('UNIQUE_STRUCTURE_HASHES',len({r['structure_sha'] for r in rows if r['structure_sha']}))
@@ -127,16 +141,16 @@ jobs:
               f.write('Gerado em 2026-08-30\n\n')
               f.write('COMO REINSTALAR\n')
               f.write('1. Extraia este ZIP no app Arquivos do iPhone.\n')
-              f.write('2. Toque em cada arquivo .shortcut numerado na raiz.\n')
-              f.write('3. O iOS abrirá o app Atalhos para adicionar/importar o atalho.\n')
-              f.write('4. Os links do iCloud abaixo também ficam registrados como rota alternativa.\n\n')
-              f.write('Os arquivos .shortcut na raiz são as cópias principais, baixadas do campo signedShortcut quando disponível.\n')
-              f.write('A pasta RAW guarda a estrutura não assinada para auditoria/recuperação técnica.\n\n')
+              f.write('2. Toque no arquivo .shortcut desejado na raiz do ZIP extraído.\n')
+              f.write('3. O iOS abrirá o app Atalhos para importar/adicionar o atalho.\n')
+              f.write('4. Os links do iCloud também estão registrados abaixo como alternativa.\n\n')
+              f.write('Os .shortcut da raiz são cópias assinadas pela Apple quando o iCloud disponibiliza signedShortcut.\n')
+              f.write('A pasta RAW contém a estrutura bruta para auditoria e recuperação técnica.\n\n')
               for r in rows:
                   f.write(f"{r['idx']}. {r['name']}\n")
                   f.write(f"   Arquivo para reinstalar: {r['install_file']}\n")
                   f.write(f"   Link iCloud: {r['url']}\n")
-                  f.write(f"   ID iCloud: {r['sid']}\n")
+                  f.write(f"   ID: {r['sid']}\n")
                   f.write(f"   Assinatura: {r['signing']}\n")
                   f.write(f"   Origem principal: {r['source']}\n")
                   f.write(f"   SHA-256 principal: {r['install_sha']}\n")
@@ -144,17 +158,16 @@ jobs:
                   f.write(f"   Ações: {r['actions']}\n")
                   f.write(f"   Gatilhos: {r['triggers']}\n")
                   f.write(f"   Fingerprint estrutural: {r['structure_sha']}\n")
-                  f.write(f"   Leitura estrutural: {r['parse_status']}\n\n")
+                  f.write(f"   Parser: {r['parse_status']}\n\n")
               f.write('VERIFICAÇÃO DE DUPLICIDADE\n')
-              if duplicate_pairs:
-                  for a,b,reasons in duplicate_pairs:
+              if duplicates:
+                  for a,b,reasons in duplicates:
                       f.write(f'Possível repetição entre {a} e {b}: {", ".join(reasons)}\n')
               else:
                   f.write('Nenhum dos quatro atalhos é duplicado por conteúdo bruto, arquivo assinado ou estrutura funcional normalizada.\n')
 
-          # Machine-readable manifest
           with open('backup-shortcuts/manifest.json','w',encoding='utf-8') as f:
-              json.dump({'shortcuts':rows,'duplicate_pairs':duplicate_pairs},f,ensure_ascii=False,indent=2)
+              json.dump({'shortcuts':rows,'duplicate_pairs':duplicates},f,ensure_ascii=False,indent=2)
           PY
       - name: Upload backup artifact
         uses: actions/upload-artifact@v4
