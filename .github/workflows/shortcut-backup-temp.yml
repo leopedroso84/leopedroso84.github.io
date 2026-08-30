@@ -7,31 +7,64 @@ jobs:
   backup:
     runs-on: macos-latest
     steps:
-      - name: Download shortcut
+      - name: Download shortcuts and build manifest
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p backup-shortcuts
           python3 - <<'PY'
-          import json, urllib.request, plistlib
-          sid='d99435c5b2f5491781ddf6f745215a29'
-          api=f'https://www.icloud.com/shortcuts/api/records/{sid}'
-          req=urllib.request.Request(api,headers={'User-Agent':'Mozilla/5.0'})
-          with urllib.request.urlopen(req,timeout=30) as r:
-              meta=json.load(r)
-          v=meta['fields']['shortcut']['value']
-          req=urllib.request.Request(v['downloadURL'],headers={'User-Agent':'Mozilla/5.0'})
-          with urllib.request.urlopen(req,timeout=30) as r:
-              raw=r.read()
-          open('Gerenciamento de Rede e Bateria.shortcut','wb').write(raw)
-          obj=plistlib.loads(raw)
-          print('name=',meta['fields']['name']['value'])
-          print('signing=',meta['fields']['signingStatus']['value'])
-          print('actions=',len(obj.get('WFWorkflowActions',[])))
-          print('triggers=',len(obj.get('WFWorkflowTriggers',[])))
+          import json, urllib.request, plistlib, hashlib, os, re
+          shortcuts = [
+              ('53c343865a5b491fa70c1e34641da3ac','https://www.icloud.com/shortcuts/53c343865a5b491fa70c1e34641da3ac'),
+              ('1f1656fb583d4363a68b0adf518ca287','https://www.icloud.com/shortcuts/1f1656fb583d4363a68b0adf518ca287'),
+              ('51f9a39f007647848305603c965cdf5c','https://www.icloud.com/shortcuts/51f9a39f007647848305603c965cdf5c'),
+          ]
+          rows=[]
+          used=set()
+          for idx,(sid,share_url) in enumerate(shortcuts,1):
+              api=f'https://www.icloud.com/shortcuts/api/records/{sid}'
+              req=urllib.request.Request(api,headers={'User-Agent':'Mozilla/5.0'})
+              with urllib.request.urlopen(req,timeout=30) as r:
+                  meta=json.load(r)
+              fields=meta['fields']
+              name=fields.get('name',{}).get('value') or f'Atalho-{idx}'
+              signing=fields.get('signingStatus',{}).get('value')
+              v=fields['shortcut']['value']
+              req=urllib.request.Request(v['downloadURL'],headers={'User-Agent':'Mozilla/5.0'})
+              with urllib.request.urlopen(req,timeout=30) as r:
+                  raw=r.read()
+              obj=plistlib.loads(raw)
+              safe=re.sub(r'[\\/:*?"<>|]+',' - ',name).strip() or f'Atalho-{idx}'
+              base=safe
+              n=2
+              while safe.lower() in used:
+                  safe=f'{base} ({n})'; n+=1
+              used.add(safe.lower())
+              path=os.path.join('backup-shortcuts',safe+'.shortcut')
+              open(path,'wb').write(raw)
+              sha=hashlib.sha256(raw).hexdigest()
+              actions=len(obj.get('WFWorkflowActions',[]))
+              triggers=len(obj.get('WFWorkflowTriggers',[]))
+              rows.append((idx,name,safe+'.shortcut',sid,share_url,signing,len(raw),sha,actions,triggers))
+              print(f'[{idx}] NAME={name!r} FILE={safe}.shortcut SIGNING={signing!r} BYTES={len(raw)} SHA256={sha} ACTIONS={actions} TRIGGERS={triggers}')
+          with open('backup-shortcuts/LEIA-ME - Manifesto dos Atalhos.txt','w',encoding='utf-8') as f:
+              f.write('BACKUP DOS ATALHOS DO IPHONE\n')
+              f.write('Gerado em 2026-08-30\n\n')
+              for idx,name,filename,sid,url,signing,size,sha,actions,triggers in rows:
+                  f.write(f'{idx}. {name}\n')
+                  f.write(f'   Arquivo: {filename}\n')
+                  f.write(f'   Link iCloud: {url}\n')
+                  f.write(f'   ID: {sid}\n')
+                  f.write(f'   Assinatura: {signing}\n')
+                  f.write(f'   Tamanho: {size} bytes\n')
+                  f.write(f'   SHA-256: {sha}\n')
+                  f.write(f'   Ações: {actions}\n')
+                  f.write(f'   Gatilhos: {triggers}\n\n')
           PY
-      - name: Upload artifact
+      - name: Upload backup artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gerenciamento-rede-bateria-shortcut
-          path: Gerenciamento de Rede e Bateria.shortcut
+          name: Atalhos-iPhone-Backup-2026-08-30
+          path: backup-shortcuts/*
           if-no-files-found: error
+          retention-days: 7
