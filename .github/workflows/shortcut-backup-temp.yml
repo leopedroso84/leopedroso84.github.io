@@ -1,0 +1,37 @@
+name: Shortcut Backup Temp
+on:
+  push:
+    branches:
+      - main
+jobs:
+  backup:
+    runs-on: macos-latest
+    steps:
+      - name: Download shortcut
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, urllib.request, plistlib
+          sid='d99435c5b2f5491781ddf6f745215a29'
+          api=f'https://www.icloud.com/shortcuts/api/records/{sid}'
+          req=urllib.request.Request(api,headers={'User-Agent':'Mozilla/5.0'})
+          with urllib.request.urlopen(req,timeout=30) as r:
+              meta=json.load(r)
+          v=meta['fields']['shortcut']['value']
+          req=urllib.request.Request(v['downloadURL'],headers={'User-Agent':'Mozilla/5.0'})
+          with urllib.request.urlopen(req,timeout=30) as r:
+              raw=r.read()
+          open('Gerenciamento de Rede e Bateria.shortcut','wb').write(raw)
+          obj=plistlib.loads(raw)
+          print('name=',meta['fields']['name']['value'])
+          print('signing=',meta['fields']['signingStatus']['value'])
+          print('actions=',len(obj.get('WFWorkflowActions',[])))
+          print('triggers=',len(obj.get('WFWorkflowTriggers',[])))
+          PY
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gerenciamento-rede-bateria-shortcut
+          path: Gerenciamento de Rede e Bateria.shortcut
+          if-no-files-found: error
