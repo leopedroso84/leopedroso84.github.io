@@ -15,7 +15,7 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           import json, urllib.request, plistlib, hashlib, copy
-          OLD='40969add165140e2a4cc05e2eb0ede8c'
+          BASE='f24ba67795624fdb88d11932b1c95840'
           NEW='d99435c5b2f5491781ddf6f745215a29'
 
           def load_shortcut(sid):
@@ -23,83 +23,47 @@ jobs:
               req=urllib.request.Request(api,headers={'User-Agent':'Mozilla/5.0'})
               with urllib.request.urlopen(req,timeout=30) as r:
                   meta=json.load(r)
-              fields=meta['fields']
-              v=fields['shortcut']['value']
+              v=meta['fields']['shortcut']['value']
               req=urllib.request.Request(v['downloadURL'],headers={'User-Agent':'Mozilla/5.0'})
               with urllib.request.urlopen(req,timeout=30) as r:
                   raw=r.read()
-              obj=plistlib.loads(raw)
-              return meta, raw, obj
+              return meta, raw, plistlib.loads(raw)
 
-          ometa, oraw, old = load_shortcut(OLD)
-          nmeta, nraw, new = load_shortcut(NEW)
-
-          def field(meta,key):
-              x=meta.get('fields',{}).get(key,{})
-              return x.get('value') if isinstance(x,dict) else None
-
-          print('OLD_NAME',repr(field(ometa,'name')))
-          print('NEW_NAME',repr(field(nmeta,'name')))
-          print('OLD_SIGNING',repr(field(ometa,'signingStatus')))
-          print('NEW_SIGNING',repr(field(nmeta,'signingStatus')))
-          print('OLD_SHA256',hashlib.sha256(oraw).hexdigest())
+          bmeta,braw,base=load_shortcut(BASE)
+          nmeta,nraw,new=load_shortcut(NEW)
+          print('BASE_NAME',repr(bmeta['fields']['name']['value']))
+          print('NEW_NAME',repr(nmeta['fields']['name']['value']))
+          print('BASE_SIGNING',repr(bmeta['fields']['signingStatus']['value']))
+          print('NEW_SIGNING',repr(nmeta['fields']['signingStatus']['value']))
+          print('BASE_SHA256',hashlib.sha256(braw).hexdigest())
           print('NEW_SHA256',hashlib.sha256(nraw).hexdigest())
-          print('OLD_TRIGGERS',len(old.get('WFWorkflowTriggers',[])))
+          print('BASE_TRIGGERS',len(base.get('WFWorkflowTriggers',[])))
           print('NEW_TRIGGERS',len(new.get('WFWorkflowTriggers',[])))
-          print('OLD_ACTIONS',len(old.get('WFWorkflowActions',[])))
+          print('BASE_ACTIONS',len(base.get('WFWorkflowActions',[])))
           print('NEW_ACTIONS',len(new.get('WFWorkflowActions',[])))
-          print('TRIGGERS_IDENTICAL', old.get('WFWorkflowTriggers',[]) == new.get('WFWorkflowTriggers',[]))
-          if old.get('WFWorkflowTriggers',[]) != new.get('WFWorkflowTriggers',[]):
-              print('OLD_TRIGGERS_JSON',json.dumps(old.get('WFWorkflowTriggers',[]),ensure_ascii=False,sort_keys=True,default=str))
-              print('NEW_TRIGGERS_JSON',json.dumps(new.get('WFWorkflowTriggers',[]),ensure_ascii=False,sort_keys=True,default=str))
+          print('TRIGGERS_EXACTLY_IDENTICAL',base.get('WFWorkflowTriggers',[])==new.get('WFWorkflowTriggers',[]))
 
-          oa=old.get('WFWorkflowActions',[]); na=new.get('WFWorkflowActions',[])
-          diffs=[]
-          for i in range(max(len(oa),len(na))):
-              x=oa[i] if i<len(oa) else None
-              y=na[i] if i<len(na) else None
-              if x!=y:
-                  diffs.append(i+1)
-                  print('DIFF_ACTION_INDEX',i+1)
-                  print('OLD',json.dumps(x,ensure_ascii=False,sort_keys=True,default=str))
-                  print('NEW',json.dumps(y,ensure_ascii=False,sort_keys=True,default=str))
-          print('DIFF_ACTION_COUNT',len(diffs))
-          print('DIFF_ACTION_INDEXES',diffs)
-
-          def delays(obj):
-              out=[]
-              for i,a in enumerate(obj.get('WFWorkflowActions',[]),1):
-                  if isinstance(a,dict) and a.get('WFWorkflowActionIdentifier')=='is.workflow.actions.delay':
-                      out.append((i,a.get('WFWorkflowActionParameters',{}).get('WFDelayTime')))
-              return out
-          print('OLD_DELAYS',delays(old))
-          print('NEW_DELAYS',delays(new))
-
-          # Structural signature ignoring generated UUID/group IDs/order of triggers
-          ignore_keys={'UUID','GroupingIdentifier','WFTriggerUUID'}
-          def scrub(x):
-              if isinstance(x,dict):
-                  return {k:scrub(v) for k,v in x.items() if k not in ignore_keys}
-              if isinstance(x,list):
-                  return [scrub(v) for v in x]
-              return x
-          st_old=scrub(old); st_new=scrub(new)
-          # Trigger order is semantically irrelevant here; sort scrubbed triggers
-          for z in (st_old, st_new):
-              if 'WFWorkflowTriggers' in z:
-                  z['WFWorkflowTriggers']=sorted(z['WFWorkflowTriggers'], key=lambda q: json.dumps(q,sort_keys=True,default=str))
-          print('STRUCTURALLY_EQUAL_IGNORING_IDS_TRIGGER_ORDER', st_old==st_new)
-
-          plans=[]
-          for i,a in enumerate(na,1):
-              if not isinstance(a,dict): continue
-              ident=a.get('WFWorkflowActionIdentifier','')
-              p=a.get('WFWorkflowActionParameters',{})
-              if ident in ('com.apple.ShortcutsActions.ToggleCellularPlanAction','com.apple.ShortcutsActions.SetDefaultCellularPlanAction'):
-                  plan=p.get('plan',{})
-                  title=plan.get('title',{}).get('key') if isinstance(plan,dict) else None
-                  plans.append((i,ident,title,p.get('state'),p.get('type')))
-          print('NEW_PLAN_ACTIONS',plans)
-          print('NEW_UNIQUE_PLANS',sorted({x[2] for x in plans if x[2]}))
+          norm=copy.deepcopy(base)
+          changed=[]
+          for i,a in enumerate(norm.get('WFWorkflowActions',[]),1):
+              if isinstance(a,dict) and a.get('WFWorkflowActionIdentifier')=='is.workflow.actions.delay':
+                  p=a.get('WFWorkflowActionParameters',{})
+                  if p.get('WFDelayTime')==2.0:
+                      p['WFDelayTime']=7.0
+                      changed.append(i)
+          print('NORMALIZED_DELAY_INDEXES',changed)
+          print('WHOLE_PLIST_EXACT_MATCH_AFTER_ONLY_2_TO_7',norm==new)
+          if norm!=new:
+              oa=norm.get('WFWorkflowActions',[]); na=new.get('WFWorkflowActions',[])
+              diffs=[]
+              for i in range(max(len(oa),len(na))):
+                  x=oa[i] if i<len(oa) else None
+                  y=na[i] if i<len(na) else None
+                  if x!=y:
+                      diffs.append(i+1)
+                      print('REMAINING_DIFF_ACTION',i+1)
+                      print('BASE_NORM',json.dumps(x,ensure_ascii=False,sort_keys=True,default=str))
+                      print('NEW',json.dumps(y,ensure_ascii=False,sort_keys=True,default=str))
+              print('REMAINING_DIFF_COUNT',len(diffs))
           print('=== END ===')
           PY
