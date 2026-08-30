@@ -1,0 +1,13 @@
+Shortcut validation result
+New shortcut: d99435c5b2f5491781ddf6f745215a29
+Name: Gerenciamento de Rede e Bateria
+Signing: APPROVED
+Triggers: 5
+Actions: 55
+Triggers exactly identical to base f24ba67795624fdb88d11932b1c95840: true
+Base delay indexes changed: 29, 37, 45
+Base delays: 2 seconds
+New delays: 7 seconds
+Whole plist exact match after changing only those three delays from 2 to 7: true
+New unique cellular plans referenced: VIVO, TIM
+Conclusion: exact intended change only; functional structure preserved.
