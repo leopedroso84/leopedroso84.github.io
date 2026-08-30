@@ -1,0 +1,48 @@
+VALIDAÇÃO FINAL DOS 4 ATALHOS — 2026-08-30
+
+1. Automação Alarme
+- iCloud ID: 53c343865a5b491fa70c1e34641da3ac
+- signingStatus: APPROVED
+- ações: 1
+- gatilhos: 5
+- SHA-256 assinado: bccea4a23ceb39effcfdf710c9d8586f8508991b14281df771034df7413f57e1
+- SHA-256 RAW: 44a8ca55fc961a4251378950b0225595bf87b7e06a479661c4d05cc957813bd4
+- fingerprint estrutural: fb0f3a0ed313dd5840d5d66d85f0fc574f8e72c36f10b44e6f933dcc296bcf0a
+
+2. Rotina
+- iCloud ID: 1f1656fb583d4363a68b0adf518ca287
+- signingStatus: APPROVED
+- ações: 194
+- gatilhos: 0
+- SHA-256 assinado: ae82a559889eae98eabd10455681c74c5d94931af873cfc98936c6bb18996210
+- SHA-256 RAW: f49266e087a8ecd315a0a5020245d242b9d45b8c42161217a98e16d02b3c70b0
+- fingerprint estrutural: b7120be2dece57aa42f063dc8936f124bc91649037b5759c1fe9916f0ae6784b
+
+3. Baixar
+- iCloud ID: 51f9a39f007647848305603c965cdf5c
+- signingStatus: APPROVED
+- ações: 166
+- gatilhos: 0
+- SHA-256 assinado: 31095a87a0ce3729ab59cbbf073a3d26c7e846d8ce9e812ba201fbd446c2b92b
+- SHA-256 RAW: 5972c3b7af4db569ae6c950cbcad574fbf96fa3cc3dede76848455074f2ab227
+- fingerprint estrutural: 63e4954baafa61578e4c54bd76005d1640cbd7b6edfed603cc879e2564d4d397
+
+4. Gerenciamento de Rede e Bateria
+- iCloud ID: 37ebea5d0a1f42fc803f0440203fdcd1
+- signingStatus: APPROVED
+- ações: 55
+- gatilhos: 5
+- SHA-256 assinado: e3dd6f86451e0b4652c17b5b64c667ac20987f4605f81a20bf19e7c2d640df7b
+- SHA-256 RAW: ff6b9bf0aaa79d5d4b9b6a4d3ff3a954adf012583a31f938c6ee9b773eeb8bb3
+- fingerprint estrutural: 0997af9b64d25baf7d01cf57d6d6a3bd921acb832802c061678a8ba3fe83bd83
+
+DUPLICIDADE
+- duplicate_pairs: []
+- hashes RAW únicos: 4
+- hashes assinados únicos: 4
+- fingerprints estruturais únicos: 4
+- conclusão: os quatro atalhos são distintos; nenhum é repetido.
+
+BACKUP
+- pacote: Atalhos iPhone - Backup Completo - 2026-08-30.zip
+- conteúdo: 4 arquivos .shortcut assinados para reinstalação, 4 arquivos RAW para auditoria/recuperação, LEIA-ME com instruções e manifest.json.
