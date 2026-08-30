@@ -7,24 +7,41 @@ jobs:
   backup:
     runs-on: macos-latest
     steps:
-      - name: Download signed shortcuts and raw backups
+      - name: Validate and package four shortcuts
         shell: bash
         run: |
           set -euo pipefail
+          rm -rf backup-shortcuts
           mkdir -p backup-shortcuts/RAW
           python3 - <<'PY'
-          import json, urllib.request, hashlib, os, re
+          import json, urllib.request, hashlib, os, re, subprocess, copy
+
           shortcuts = [
               ('53c343865a5b491fa70c1e34641da3ac','https://www.icloud.com/shortcuts/53c343865a5b491fa70c1e34641da3ac'),
               ('1f1656fb583d4363a68b0adf518ca287','https://www.icloud.com/shortcuts/1f1656fb583d4363a68b0adf518ca287'),
               ('51f9a39f007647848305603c965cdf5c','https://www.icloud.com/shortcuts/51f9a39f007647848305603c965cdf5c'),
+              ('37ebea5d0a1f42fc803f0440203fdcd1','https://www.icloud.com/shortcuts/37ebea5d0a1f42fc803f0440203fdcd1'),
           ]
-          rows=[]
-          used=set()
+
           def download(v):
               req=urllib.request.Request(v['downloadURL'],headers={'User-Agent':'Mozilla/5.0'})
               with urllib.request.urlopen(req,timeout=30) as r:
                   return r.read()
+
+          def scrub(x):
+              if isinstance(x,dict):
+                  out={}
+                  for k,v in x.items():
+                      if 'uuid' in k.lower() or k == 'GroupingIdentifier':
+                          continue
+                      out[k]=scrub(v)
+                  return out
+              if isinstance(x,list):
+                  return [scrub(v) for v in x]
+              return x
+
+          rows=[]
+          used=set()
           for idx,(sid,share_url) in enumerate(shortcuts,1):
               api=f'https://www.icloud.com/shortcuts/api/records/{sid}'
               req=urllib.request.Request(api,headers={'User-Agent':'Mozilla/5.0'})
@@ -40,17 +57,15 @@ jobs:
                   safe=f'{base} ({n})'; n+=1
               used.add(safe.lower())
 
-              unsigned_v=fields['shortcut']['value']
-              unsigned=download(unsigned_v)
-              unsigned_sha=hashlib.sha256(unsigned).hexdigest()
-              raw_name=f'{idx:02d} - {safe} - unsigned.bplist'
-              open(os.path.join('backup-shortcuts','RAW',raw_name),'wb').write(unsigned)
+              unsigned=download(fields['shortcut']['value'])
+              raw_sha=hashlib.sha256(unsigned).hexdigest()
+              raw_path=os.path.join('backup-shortcuts','RAW',f'{idx:02d} - {safe} - unsigned.bplist')
+              open(raw_path,'wb').write(unsigned)
 
               signed_field=fields.get('signedShortcut',{})
               signed_v=signed_field.get('value') if isinstance(signed_field,dict) else None
               if isinstance(signed_v,dict) and signed_v.get('downloadURL'):
-                  signed=download(signed_v)
-                  installable=signed
+                  installable=download(signed_v)
                   source='signedShortcut'
               else:
                   installable=unsigned
@@ -59,35 +74,92 @@ jobs:
               install_name=f'{idx:02d} - {safe}.shortcut'
               open(os.path.join('backup-shortcuts',install_name),'wb').write(installable)
 
-              rows.append({
-                  'idx':idx,'name':name,'file':install_name,'sid':sid,'url':share_url,
-                  'signing':signing,'source':source,'signed_size':len(installable),'signed_sha':signed_sha,
-                  'raw_file':'RAW/'+raw_name,'raw_size':len(unsigned),'raw_sha':unsigned_sha,
-              })
-              print(f'[{idx}] NAME={name!r} SIGNING={signing!r} PRIMARY={install_name!r} SOURCE={source} PRIMARY_BYTES={len(installable)} PRIMARY_SHA256={signed_sha} RAW_BYTES={len(unsigned)} RAW_SHA256={unsigned_sha}')
+              actions=triggers=None
+              structure_sha=None
+              parse_status='NOT_PARSED'
+              json_path=f'/tmp/shortcut-{idx}.json'
+              raw_tmp=f'/tmp/shortcut-{idx}.bplist'
+              open(raw_tmp,'wb').write(unsigned)
+              p=subprocess.run(['/usr/bin/plutil','-convert','json','-o',json_path,raw_tmp],capture_output=True,text=True)
+              if p.returncode==0:
+                  try:
+                      obj=json.load(open(json_path,encoding='utf-8'))
+                      actions=len(obj.get('WFWorkflowActions',[]))
+                      triggers=len(obj.get('WFWorkflowTriggers',[]))
+                      semantic={
+                          'triggers': sorted([scrub(x) for x in obj.get('WFWorkflowTriggers',[])], key=lambda q: json.dumps(q,sort_keys=True,ensure_ascii=False)),
+                          'actions': scrub(obj.get('WFWorkflowActions',[])),
+                      }
+                      structure_sha=hashlib.sha256(json.dumps(semantic,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
+                      parse_status='OK'
+                  except Exception as e:
+                      parse_status=f'JSON_ERROR:{type(e).__name__}'
+              else:
+                  parse_status='PLUTIL_ERROR'
+
+              row={
+                  'idx':idx,'sid':sid,'url':share_url,'name':name,'safe':safe,'signing':signing,
+                  'source':source,'install_file':install_name,'install_size':len(installable),'install_sha':signed_sha,
+                  'raw_file':'RAW/'+os.path.basename(raw_path),'raw_size':len(unsigned),'raw_sha':raw_sha,
+                  'actions':actions,'triggers':triggers,'structure_sha':structure_sha,'parse_status':parse_status,
+              }
+              rows.append(row)
+              print('SHORTCUT',json.dumps(row,ensure_ascii=False,sort_keys=True))
+
+          # Duplicate checks
+          duplicate_pairs=[]
+          for i in range(len(rows)):
+              for j in range(i+1,len(rows)):
+                  a,b=rows[i],rows[j]
+                  reasons=[]
+                  if a['raw_sha']==b['raw_sha']: reasons.append('RAW_SHA256_IDENTICAL')
+                  if a['install_sha']==b['install_sha']: reasons.append('SIGNED_SHA256_IDENTICAL')
+                  if a['structure_sha'] and a['structure_sha']==b['structure_sha']: reasons.append('STRUCTURE_IDENTICAL')
+                  if reasons:
+                      duplicate_pairs.append((a['idx'],b['idx'],reasons))
+          print('DUPLICATE_PAIRS',json.dumps(duplicate_pairs,ensure_ascii=False))
+          print('UNIQUE_RAW_HASHES',len({r['raw_sha'] for r in rows}))
+          print('UNIQUE_SIGNED_HASHES',len({r['install_sha'] for r in rows}))
+          print('UNIQUE_STRUCTURE_HASHES',len({r['structure_sha'] for r in rows if r['structure_sha']}))
 
           with open('backup-shortcuts/LEIA-ME - Manifesto dos Atalhos.txt','w',encoding='utf-8') as f:
               f.write('BACKUP DOS ATALHOS DO IPHONE\n')
               f.write('Gerado em 2026-08-30\n\n')
-              f.write('Os arquivos .shortcut na raiz deste ZIP são as cópias principais para reinstalação.\n')
-              f.write('A pasta RAW contém as estruturas brutas para recuperação/auditoria.\n\n')
+              f.write('COMO REINSTALAR\n')
+              f.write('1. Extraia este ZIP no app Arquivos do iPhone.\n')
+              f.write('2. Toque em cada arquivo .shortcut numerado na raiz.\n')
+              f.write('3. O iOS abrirá o app Atalhos para adicionar/importar o atalho.\n')
+              f.write('4. Os links do iCloud abaixo também ficam registrados como rota alternativa.\n\n')
+              f.write('Os arquivos .shortcut na raiz são as cópias principais, baixadas do campo signedShortcut quando disponível.\n')
+              f.write('A pasta RAW guarda a estrutura não assinada para auditoria/recuperação técnica.\n\n')
               for r in rows:
                   f.write(f"{r['idx']}. {r['name']}\n")
-                  f.write(f"   Arquivo principal: {r['file']}\n")
+                  f.write(f"   Arquivo para reinstalar: {r['install_file']}\n")
                   f.write(f"   Link iCloud: {r['url']}\n")
-                  f.write(f"   ID: {r['sid']}\n")
-                  f.write(f"   Status de assinatura no iCloud: {r['signing']}\n")
-                  f.write(f"   Origem do arquivo principal: {r['source']}\n")
-                  f.write(f"   Tamanho principal: {r['signed_size']} bytes\n")
-                  f.write(f"   SHA-256 principal: {r['signed_sha']}\n")
-                  f.write(f"   Arquivo RAW: {r['raw_file']}\n")
-                  f.write(f"   Tamanho RAW: {r['raw_size']} bytes\n")
-                  f.write(f"   SHA-256 RAW: {r['raw_sha']}\n\n")
+                  f.write(f"   ID iCloud: {r['sid']}\n")
+                  f.write(f"   Assinatura: {r['signing']}\n")
+                  f.write(f"   Origem principal: {r['source']}\n")
+                  f.write(f"   SHA-256 principal: {r['install_sha']}\n")
+                  f.write(f"   SHA-256 RAW: {r['raw_sha']}\n")
+                  f.write(f"   Ações: {r['actions']}\n")
+                  f.write(f"   Gatilhos: {r['triggers']}\n")
+                  f.write(f"   Fingerprint estrutural: {r['structure_sha']}\n")
+                  f.write(f"   Leitura estrutural: {r['parse_status']}\n\n")
+              f.write('VERIFICAÇÃO DE DUPLICIDADE\n')
+              if duplicate_pairs:
+                  for a,b,reasons in duplicate_pairs:
+                      f.write(f'Possível repetição entre {a} e {b}: {", ".join(reasons)}\n')
+              else:
+                  f.write('Nenhum dos quatro atalhos é duplicado por conteúdo bruto, arquivo assinado ou estrutura funcional normalizada.\n')
+
+          # Machine-readable manifest
+          with open('backup-shortcuts/manifest.json','w',encoding='utf-8') as f:
+              json.dump({'shortcuts':rows,'duplicate_pairs':duplicate_pairs},f,ensure_ascii=False,indent=2)
           PY
       - name: Upload backup artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Atalhos-iPhone-Backup-2026-08-30
+          name: Atalhos-iPhone-Backup-Completo-2026-08-30
           path: backup-shortcuts/**
           if-no-files-found: error
           retention-days: 7
