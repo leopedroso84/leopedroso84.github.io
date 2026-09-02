@@ -1,0 +1,16 @@
+INSPEÇÃO ROTINA — 2026-09-02
+
+Atalho Rotina: 194 ações, 0 gatilhos próprios.
+Bloco único de silencioso/volume:
+- ação 140: SE variável plantao_agora = 1
+- ação 141: Desativar Modo Silencioso (state=false)
+- ação 142: Definir volume de TOQUE (Ringtone) = 1.0 / 100%
+- ação 143: Caso contrário
+- ação 144: Ativar Modo Silencioso (state=true)
+- ação 145: Terminar Se
+
+Imediatamente depois começa o bloco de horário/Foco, nas ações 146 em diante, com ações para os Focos Descanso e Sono.
+
+Atalho Automação Alarme: 5 gatilhos de horário e 1 ação; a única ação executa o atalho Rotina.
+
+Conclusão: para alterar a política de modo silencioso/volume dentro da Rotina, existe um único bloco localizado (ações 140–145). Não é necessário editar múltiplas ocorrências de volume/silencioso espalhadas pelo atalho.
