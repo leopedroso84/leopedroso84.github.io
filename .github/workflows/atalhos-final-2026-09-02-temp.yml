@@ -9,170 +9,123 @@ jobs:
       - name: Validate and package current shortcuts
         shell: bash
         run: |
+          cat > /tmp/plistjson.swift <<'SWIFT'
+          import Foundation
+          func clean(_ value: Any) -> Any {
+              if let d = value as? Date { return ["__date__": d.timeIntervalSinceReferenceDate] }
+              if let d = value as? Data { return ["__data__": d.base64EncodedString()] }
+              if let a = value as? [Any] { return a.map { clean($0) } }
+              if let m = value as? [String: Any] {
+                  var out:[String:Any] = [:]
+                  for (k,v) in m { out[k] = clean(v) }
+                  return out
+              }
+              if let n = value as? NSNumber { return n }
+              if let s = value as? NSString { return s as String }
+              return String(describing: value)
+          }
+          let url = URL(fileURLWithPath: CommandLine.arguments[1])
+          let data = try Data(contentsOf: url)
+          var fmt = PropertyListSerialization.PropertyListFormat.binary
+          let obj = try PropertyListSerialization.propertyList(from: data, options: [], format: &fmt)
+          let cleaned = clean(obj)
+          let j = try JSONSerialization.data(withJSONObject: cleaned, options: [])
+          FileHandle.standardOutput.write(j)
+          SWIFT
+
           python3 - <<'PY'
-          import json, urllib.request, plistlib, hashlib, os, re, zipfile, unicodedata
+          import json, urllib.request, plistlib, hashlib, os, re, zipfile, unicodedata, tempfile, subprocess
           from collections import Counter
 
-          PROVIDED = [
-              'b6a37d5a0db740d5b63f4c39da154798',
-              '050b30849fb74a498890e38fdaca312a',
-          ]
-          REF_ROTINA = '653a0bc98f424dc7bbfd30e4b0a0b0fb'
-          REF_ALARM_OLD = '53c343865a5b491fa70c1e34641da3ac'
-          FIXED = {
-              'Baixar': '51f9a39f007647848305603c965cdf5c',
-              'Gerenciamento de Rede e Bateria': '37ebea5d0a1f42fc803f0440203fdcd1',
-          }
-          EXPECTED_COUNTS = {
-              'Rotina': (196, 0),
-              'Automação Alarme': (1, 6),
-              'Baixar': (166, 0),
-              'Gerenciamento de Rede e Bateria': (55, 5),
-          }
+          PROVIDED=['b6a37d5a0db740d5b63f4c39da154798','050b30849fb74a498890e38fdaca312a']
+          REF_ROTINA='653a0bc98f424dc7bbfd30e4b0a0b0fb'
+          REF_ALARM_OLD='53c343865a5b491fa70c1e34641da3ac'
+          FIXED={'Baixar':'51f9a39f007647848305603c965cdf5c','Gerenciamento de Rede e Bateria':'37ebea5d0a1f42fc803f0440203fdcd1'}
+          EXPECTED={'Rotina':(196,0),'Automação Alarme':(1,6),'Baixar':(166,0),'Gerenciamento de Rede e Bateria':(55,5)}
 
           def get(url):
-              req = urllib.request.Request(url, headers={'User-Agent':'Mozilla/5.0'})
-              with urllib.request.urlopen(req, timeout=40) as r:
-                  return r.read()
+              req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0'})
+              with urllib.request.urlopen(req,timeout=40) as r:return r.read()
+
+          def parse_plist(raw):
+              try:
+                  return plistlib.loads(raw)
+              except Exception:
+                  fd,path=tempfile.mkstemp(suffix='.shortcut'); os.close(fd)
+                  open(path,'wb').write(raw)
+                  try:
+                      out=subprocess.check_output(['swift','/tmp/plistjson.swift',path],timeout=90)
+                      return json.loads(out)
+                  finally:
+                      os.unlink(path)
 
           def fetch(sid):
-              meta = json.loads(get('https://www.icloud.com/shortcuts/api/records/' + sid))
-              f = meta['fields']
-              raw = get(f['shortcut']['value']['downloadURL'])
-              signed_field = f.get('signedShortcut')
-              signed = get(signed_field['value']['downloadURL']) if signed_field else None
-              obj = plistlib.loads(raw)
-              return {
-                  'id': sid,
-                  'name': f['name']['value'],
-                  'signing': f.get('signingStatus',{}).get('value'),
-                  'raw': raw,
-                  'signed': signed,
-                  'obj': obj,
-                  'actions': obj.get('WFWorkflowActions', []),
-                  'triggers': obj.get('WFWorkflowTriggers', []),
-              }
+              meta=json.loads(get('https://www.icloud.com/shortcuts/api/records/'+sid)); f=meta['fields']
+              raw=get(f['shortcut']['value']['downloadURL'])
+              sf=f.get('signedShortcut'); signed=get(sf['value']['downloadURL']) if sf else None
+              obj=parse_plist(raw)
+              return {'id':sid,'name':f['name']['value'],'signing':f.get('signingStatus',{}).get('value'),'raw':raw,'signed':signed,'obj':obj,'actions':obj.get('WFWorkflowActions',[]),'triggers':obj.get('WFWorkflowTriggers',[])}
 
           def scrub(x):
-              if isinstance(x, dict):
-                  return {k:scrub(v) for k,v in x.items() if 'uuid' not in k.lower() and k != 'GroupingIdentifier'}
-              if isinstance(x, list):
-                  return [scrub(v) for v in x]
-              if isinstance(x, bytes):
-                  return {'__bytes__': x.hex()}
+              if isinstance(x,dict): return {k:scrub(v) for k,v in x.items() if 'uuid' not in k.lower() and k!='GroupingIdentifier'}
+              if isinstance(x,list): return [scrub(v) for v in x]
+              if isinstance(x,bytes): return {'__bytes__':x.hex()}
               return x
+          def canon(x): return json.dumps(scrub(x),sort_keys=True,ensure_ascii=False,default=str,separators=(',',':'))
+          def fp(item):
+              p={'actions':[canon(a) for a in item['actions']],'triggers':sorted(canon(t) for t in item['triggers'])}
+              return hashlib.sha256(json.dumps(p,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+          def safe(name):
+              s=unicodedata.normalize('NFKD',name); s=''.join(c for c in s if not unicodedata.combining(c)); return re.sub(r'[^A-Za-z0-9._ -]+','',s).strip() or 'Atalho'
 
-          def canon(x):
-              return json.dumps(scrub(x), sort_keys=True, ensure_ascii=False, default=str, separators=(',',':'))
+          provided=[fetch(x) for x in PROVIDED]
+          print('PROVIDED_NAMES',[(x['id'],x['name']) for x in provided])
+          by={x['name']:x for x in provided}
+          assert set(by)=={'Rotina','Automação Alarme'}, list(by)
+          rotina,alarm=by['Rotina'],by['Automação Alarme']
+          ref_rotina,ref_alarm=fetch(REF_ROTINA),fetch(REF_ALARM_OLD)
 
-          def structural_fp(item):
-              tr = sorted(canon(t) for t in item['triggers'])
-              payload = {'actions':[canon(a) for a in item['actions']], 'triggers':tr}
-              return hashlib.sha256(json.dumps(payload,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+          assert rotina['signing']=='APPROVED' and alarm['signing']=='APPROVED'
+          assert (len(rotina['actions']),len(rotina['triggers']))==(196,0)
+          assert (len(alarm['actions']),len(alarm['triggers']))==(1,6)
+          assert [canon(a) for a in rotina['actions']]==[canon(a) for a in ref_rotina['actions']], 'Rotina difere da 653a'
+          assert [canon(a) for a in alarm['actions']]==[canon(a) for a in ref_alarm['actions']], 'Ação da Automação mudou'
 
-          def safe_name(name):
-              s = unicodedata.normalize('NFKD', name)
-              s = ''.join(c for c in s if not unicodedata.combining(c))
-              s = re.sub(r'[^A-Za-z0-9._ -]+','',s).strip()
-              return s or 'Atalho'
+          old=Counter(canon(t) for t in ref_alarm['triggers']); new=Counter(canon(t) for t in alarm['triggers'])
+          removed=list((old-new).elements()); added=list((new-old).elements())
+          print('ALARM_TRIGGER_DIFF removed=',removed)
+          print('ALARM_TRIGGER_DIFF added=',added)
+          assert not removed, 'Gatilho antigo removido/modificado'
+          assert len(added)==1, f'Esperava 1 gatilho novo, achei {len(added)}'
+          print('ALARM_ADDED_TRIGGER',added[0])
 
-          provided = [fetch(x) for x in PROVIDED]
-          print('PROVIDED_NAMES', [(x['id'],x['name']) for x in provided])
-          by_name = {x['name']:x for x in provided}
-          assert set(by_name) == {'Rotina','Automação Alarme'}, f'Os dois links deveriam ser Rotina + Automação Alarme; vieram: {list(by_name)}'
-
-          rotina = by_name['Rotina']
-          alarm = by_name['Automação Alarme']
-          ref_rotina = fetch(REF_ROTINA)
-          ref_alarm = fetch(REF_ALARM_OLD)
-
-          assert rotina['signing'] == 'APPROVED', f"Rotina signing={rotina['signing']}"
-          assert alarm['signing'] == 'APPROVED', f"Alarm signing={alarm['signing']}"
-          assert len(rotina['actions']) == 196 and len(rotina['triggers']) == 0
-          assert len(alarm['actions']) == 1 and len(alarm['triggers']) == 6
-
-          # Rotina deve ser estruturalmente idêntica à última versão final aprovada.
-          assert [canon(a) for a in rotina['actions']] == [canon(a) for a in ref_rotina['actions']], 'Rotina difere da versão 653a aprovada'
-          assert sorted(canon(t) for t in rotina['triggers']) == sorted(canon(t) for t in ref_rotina['triggers'])
-          print('ROTINA_COMPARE_OK', rotina['id'], 'actions',len(rotina['actions']))
-
-          # Automação: ação final deve ser a mesma; gatilhos antigos preservados e exatamente 1 novo.
-          assert [canon(a) for a in alarm['actions']] == [canon(a) for a in ref_alarm['actions']], 'Ação da Automação Alarme mudou'
-          old_tr = Counter(canon(t) for t in ref_alarm['triggers'])
-          new_tr = Counter(canon(t) for t in alarm['triggers'])
-          removed = list((old_tr - new_tr).elements())
-          added = list((new_tr - old_tr).elements())
-          print('ALARM_TRIGGER_DIFF removed=', removed)
-          print('ALARM_TRIGGER_DIFF added=', added)
-          assert not removed, 'Algum gatilho antigo da Automação Alarme foi removido/modificado'
-          assert len(added) == 1, f'Esperava exatamente 1 novo gatilho, achei {len(added)}'
-          print('ALARM_COMPARE_OK', alarm['id'], 'triggers',len(alarm['triggers']))
-
-          current = {
-              'Automação Alarme': alarm,
-              'Rotina': rotina,
-              'Baixar': fetch(FIXED['Baixar']),
-              'Gerenciamento de Rede e Bateria': fetch(FIXED['Gerenciamento de Rede e Bateria']),
-          }
-
+          current={'Automação Alarme':alarm,'Rotina':rotina,'Baixar':fetch(FIXED['Baixar']),'Gerenciamento de Rede e Bateria':fetch(FIXED['Gerenciamento de Rede e Bateria'])}
           rows=[]
           for name,item in current.items():
-              exp=EXPECTED_COUNTS[name]
-              assert item['name']==name, (name,item['name'])
-              assert item['signing']=='APPROVED', f'{name} não está APPROVED'
-              assert item['signed'] is not None, f'{name} sem signedShortcut'
-              assert (len(item['actions']),len(item['triggers']))==exp, f'{name} contagem inesperada'
-              row={
-                  'name':name,
-                  'icloud_id':item['id'],
-                  'icloud_url':'https://www.icloud.com/shortcuts/'+item['id'],
-                  'signing_status':item['signing'],
-                  'actions':len(item['actions']),
-                  'triggers':len(item['triggers']),
-                  'signed_sha256':hashlib.sha256(item['signed']).hexdigest(),
-                  'raw_sha256':hashlib.sha256(item['raw']).hexdigest(),
-                  'structural_fingerprint':structural_fp(item),
-              }
-              rows.append(row)
-              print('CURRENT',json.dumps(row,ensure_ascii=False,sort_keys=True))
+              assert item['name']==name
+              assert item['signing']=='APPROVED'
+              assert item['signed'] is not None
+              assert (len(item['actions']),len(item['triggers']))==EXPECTED[name], (name,len(item['actions']),len(item['triggers']))
+              row={'name':name,'icloud_id':item['id'],'icloud_url':'https://www.icloud.com/shortcuts/'+item['id'],'signing_status':item['signing'],'actions':len(item['actions']),'triggers':len(item['triggers']),'signed_sha256':hashlib.sha256(item['signed']).hexdigest(),'raw_sha256':hashlib.sha256(item['raw']).hexdigest(),'structural_fingerprint':fp(item)}
+              rows.append(row); print('CURRENT',json.dumps(row,ensure_ascii=False,sort_keys=True))
 
           dup=[]
           for i in range(len(rows)):
               for j in range(i+1,len(rows)):
-                  if rows[i]['structural_fingerprint']==rows[j]['structural_fingerprint']:
-                      dup.append([rows[i]['name'],rows[j]['name']])
-          print('DUPLICATE_PAIRS',dup)
-          assert not dup, f'Duplicatas estruturais: {dup}'
+                  if rows[i]['structural_fingerprint']==rows[j]['structural_fingerprint']: dup.append([rows[i]['name'],rows[j]['name']])
+          print('DUPLICATE_PAIRS',dup); assert not dup
 
-          out='/tmp/atalhos_backup'
-          os.makedirs(out,exist_ok=True)
+          out='/tmp/atalhos_backup'; os.makedirs(out,exist_ok=True)
           for name,item in current.items():
-              base=safe_name(name)
-              open(os.path.join(out,base+'.shortcut'),'wb').write(item['signed'])
-              open(os.path.join(out,base+' - RAW.shortcut'),'wb').write(item['raw'])
-
-          manifest={
-              'backup_date':'2026-09-02',
-              'type':'full_snapshot',
-              'shortcuts':rows,
-              'validation':{
-                  'rotina_matches_653a_final':True,
-                  'automation_old_triggers_preserved':True,
-                  'automation_exactly_one_trigger_added':True,
-                  'duplicate_pairs':dup,
-              },
-          }
+              base=safe(name); open(os.path.join(out,base+'.shortcut'),'wb').write(item['signed']); open(os.path.join(out,base+' - RAW.shortcut'),'wb').write(item['raw'])
+          manifest={'backup_date':'2026-09-02','type':'full_snapshot','shortcuts':rows,'validation':{'rotina_matches_653a_final':True,'automation_old_triggers_preserved':True,'automation_exactly_one_trigger_added':True,'duplicate_pairs':dup}}
           open(os.path.join(out,'manifest.json'),'w',encoding='utf-8').write(json.dumps(manifest,ensure_ascii=False,indent=2))
-          readme='''BACKUP COMPLETO DOS ATALHOS DO IPHONE — 02/09/2026\n\nEste ZIP contém a versão atual validada dos quatro atalhos.\n\nINSTALAÇÃO NO IPHONE\n1. Descompacte o ZIP no app Arquivos.\n2. Toque no arquivo .shortcut do atalho desejado.\n3. O app Atalhos abrirá para importar/adicionar.\n\nARQUIVOS\n- Os .shortcut sem "RAW" são as cópias assinadas pela Apple e são a opção principal para reinstalação.\n- Os arquivos "RAW" são cópias brutas para auditoria/recuperação.\n- manifest.json contém links iCloud, hashes e contagens validadas.\n\nVERSÕES DESTE SNAPSHOT\n- Automação Alarme: 6 gatilhos (08:00, 12:00, 14:00, 18:00, 20:00 e 22:00) e executa Rotina.\n- Rotina: versão final reorganizada, sem Foco Sono.\n- Baixar: versão corrente validada.\n- Gerenciamento de Rede e Bateria: versão corrente validada.\n'''
+          readme='''BACKUP COMPLETO DOS ATALHOS DO IPHONE — 02/09/2026\n\nContém a versão atual validada dos quatro atalhos.\n\nINSTALAÇÃO\n1. Descompacte no app Arquivos do iPhone.\n2. Toque no arquivo .shortcut desejado.\n3. O app Atalhos abrirá para importar/adicionar.\n\nOs arquivos sem RAW são cópias assinadas pela Apple. Os RAW são cópias brutas para auditoria/recuperação. O manifest.json guarda links iCloud, hashes e contagens.\n\nSNAPSHOT\n- Automação Alarme: 6 gatilhos (08:00, 12:00, 14:00, 18:00, 20:00 e 22:00), executando Rotina.\n- Rotina: versão final reorganizada, sem Foco Sono.\n- Baixar: versão corrente validada.\n- Gerenciamento de Rede e Bateria: versão corrente validada.\n'''
           open(os.path.join(out,'LEIA-ME - Manifesto dos Atalhos.txt'),'w',encoding='utf-8').write(readme)
-
-          zip_path='/tmp/Atalhos iPhone - Backup Completo - 2026-09-02.zip'
-          with zipfile.ZipFile(zip_path,'w',zipfile.ZIP_DEFLATED) as z:
-              for fn in sorted(os.listdir(out)):
-                  z.write(os.path.join(out,fn),arcname=fn)
-          print('ZIP_PATH',zip_path)
-          print('ZIP_SHA256',hashlib.sha256(open(zip_path,'rb').read()).hexdigest())
-          print('ZIP_SIZE',os.path.getsize(zip_path))
+          zp='/tmp/Atalhos iPhone - Backup Completo - 2026-09-02.zip'
+          with zipfile.ZipFile(zp,'w',zipfile.ZIP_DEFLATED) as z:
+              for fn in sorted(os.listdir(out)): z.write(os.path.join(out,fn),arcname=fn)
+          print('ZIP_SHA256',hashlib.sha256(open(zp,'rb').read()).hexdigest()); print('ZIP_SIZE',os.path.getsize(zp))
           PY
           cp "/tmp/Atalhos iPhone - Backup Completo - 2026-09-02.zip" "$GITHUB_WORKSPACE/Atalhos iPhone - Backup Completo - 2026-09-02.zip"
       - name: Upload validated backup artifact
