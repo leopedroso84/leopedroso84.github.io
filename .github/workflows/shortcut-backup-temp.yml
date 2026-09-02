@@ -44,7 +44,7 @@ jobs:
 
           shortcuts = [
               ('53c343865a5b491fa70c1e34641da3ac','https://www.icloud.com/shortcuts/53c343865a5b491fa70c1e34641da3ac'),
-              ('1f1656fb583d4363a68b0adf518ca287','https://www.icloud.com/shortcuts/1f1656fb583d4363a68b0adf518ca287'),
+              ('b3a2e65626d241af9a180d7b56a4ce2b','https://www.icloud.com/shortcuts/b3a2e65626d241af9a180d7b56a4ce2b'),
               ('51f9a39f007647848305603c965cdf5c','https://www.icloud.com/shortcuts/51f9a39f007647848305603c965cdf5c'),
               ('37ebea5d0a1f42fc803f0440203fdcd1','https://www.icloud.com/shortcuts/37ebea5d0a1f42fc803f0440203fdcd1'),
           ]
@@ -138,7 +138,7 @@ jobs:
 
           with open('backup-shortcuts/LEIA-ME - Manifesto dos Atalhos.txt','w',encoding='utf-8') as f:
               f.write('BACKUP DOS ATALHOS DO IPHONE\n')
-              f.write('Gerado em 2026-08-30\n\n')
+              f.write('Gerado em 2026-09-02\n\n')
               f.write('COMO REINSTALAR\n')
               f.write('1. Extraia este ZIP no app Arquivos do iPhone.\n')
               f.write('2. Toque no arquivo .shortcut desejado na raiz do ZIP extraído.\n')
@@ -172,7 +172,7 @@ jobs:
       - name: Upload backup artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Atalhos-iPhone-Backup-Completo-2026-08-30
+          name: Atalhos-iPhone-Backup-Completo-2026-09-02
           path: backup-shortcuts/**
           if-no-files-found: error
           retention-days: 7
