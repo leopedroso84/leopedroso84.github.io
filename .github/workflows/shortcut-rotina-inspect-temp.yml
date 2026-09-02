@@ -1,0 +1,44 @@
+name: Shortcut Rotina Inspect Temp
+on:
+  push:
+    branches: [main]
+jobs:
+  inspect:
+    runs-on: macos-latest
+    steps:
+      - name: Inspect Rotina focus/silent/volume structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, urllib.request, subprocess, os
+          sid='1f1656fb583d4363a68b0adf518ca287'
+          api=f'https://www.icloud.com/shortcuts/api/records/{sid}'
+          req=urllib.request.Request(api,headers={'User-Agent':'Mozilla/5.0'})
+          with urllib.request.urlopen(req,timeout=30) as r: meta=json.load(r)
+          v=meta['fields']['shortcut']['value']
+          req=urllib.request.Request(v['downloadURL'],headers={'User-Agent':'Mozilla/5.0'})
+          with urllib.request.urlopen(req,timeout=30) as r: raw=r.read()
+          open('/tmp/rotina.bplist','wb').write(raw)
+          subprocess.run(['/usr/bin/plutil','-convert','json','-o','/tmp/rotina.json','/tmp/rotina.bplist'],check=True)
+          obj=json.load(open('/tmp/rotina.json',encoding='utf-8'))
+          acts=obj.get('WFWorkflowActions',[])
+          print('NAME',meta['fields']['name']['value'])
+          print('SIGNING',meta['fields']['signingStatus']['value'])
+          print('ACTIONS',len(acts),'TRIGGERS',len(obj.get('WFWorkflowTriggers',[])))
+          terms=['focus','foco','silent','silenc','volume','sleep','descanso','bedtime','ringer','sound','som','alarm','alarme']
+          hits=[]
+          for i,a in enumerate(acts,1):
+              ident=a.get('WFWorkflowActionIdentifier','')
+              params=a.get('WFWorkflowActionParameters',{})
+              s=(ident+' '+json.dumps(params,ensure_ascii=False,sort_keys=True)).lower()
+              if any(t in s for t in terms): hits.append(i)
+          print('HITS',hits)
+          printed=set()
+          for h in hits:
+              for i in range(max(1,h-4),min(len(acts),h+4)+1): printed.add(i)
+          for i in sorted(printed):
+              a=acts[i-1]; ident=a.get('WFWorkflowActionIdentifier',''); params=a.get('WFWorkflowActionParameters',{})
+              print(f'[{i:03d}] {ident}')
+              print(json.dumps(params,ensure_ascii=False,sort_keys=True))
+          PY
