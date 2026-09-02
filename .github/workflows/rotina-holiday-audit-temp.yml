@@ -1,0 +1,28 @@
+name: Rotina Holiday Audit Temp
+on:
+  push:
+    branches: [main]
+jobs:
+  audit:
+    runs-on: macos-latest
+    steps:
+      - name: Audit holiday detection
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,urllib.request,plistlib
+          sid='324233eacac44a4fa103464f0efd6a5d'
+          def get(u):
+            q=urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0'})
+            with urllib.request.urlopen(q,timeout=30) as r:return r.read()
+          m=json.loads(get('https://www.icloud.com/shortcuts/api/records/'+sid)); raw=get(m['fields']['shortcut']['value']['downloadURL']); A=plistlib.loads(raw)['WFWorkflowActions']
+          def scrub(x):
+            if isinstance(x,dict): return {k:scrub(v) for k,v in x.items() if 'uuid' not in k.lower() and k!='GroupingIdentifier'}
+            if isinstance(x,list): return [scrub(v) for v in x]
+            return x
+          print('HOLIDAY_BLOCK_START')
+          for i in range(20,60):
+            a=A[i-1]
+            print('ACTION',i,a.get('WFWorkflowActionIdentifier',''),repr(scrub(a.get('WFWorkflowActionParameters',{}))))
+          print('HOLIDAY_BLOCK_END')
+          PY
