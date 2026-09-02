@@ -1,0 +1,5 @@
+COMPARAÇÃO ROTINA — 2026-09-02
+Original: nome Rotina, 194 ações, 0 gatilhos.
+Nova 6ee827d4b16e4db090eb956d903e1862: nome Rotina, signing APPROVED, 187 ações, 0 gatilhos.
+Diferença: -7 ações; prefixo original NÃO preservado; 167 posições diferem semanticamente após remover UUIDs/GroupingIdentifier; nenhuma cauda nova após as 194 ações porque o arquivo novo é menor.
+Conclusão: REPROVADA. Deve usar Desfazer.
