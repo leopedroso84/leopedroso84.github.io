@@ -1,0 +1,28 @@
+VALIDAÇÃO FINAL DE REGRAS — ROTINA 324233eacac44a4fa103464f0efd6a5d — 2026-09-02
+
+ESCALA
+- Data-base 17/08/2026; ciclo de 21 dias; minha semana quando resto do ciclo está de 0 a 6. Semanas: 17–23/08, 07–13/09, 28/09–04/10 etc.
+- Fora da semana de plantão: seg-sex trabalho normal 08:00–18:00 (almoço tratado separadamente 12:00–14:00); sábado 08:00–12:00; domingo folga.
+- Semana de plantão, dias normais: seg-sex trabalho normal 08:00–18:00 com almoço; sábado plantão 12:00–20:00; domingo plantão 08:00–20:00.
+- Feriado comum dentro da semana de plantão: plantão 08:00–20:00 em qualquer dia. Fora da semana: folga.
+
+CARNAVAL / CINZAS
+- O atalho lê eventos de dia inteiro dos calendários chamados “Feriados” ou “Feriados Jales”.
+- Evento com título Carnaval: há uma exceção quando o índice semanal é 0 (segunda-feira). Nesse caso NÃO marca tem_feriado. Portanto segunda de Carnaval segue dia normal.
+- O mesmo evento Carnaval nos demais dias, inclusive terça-feira, entra como tem_feriado=1. Portanto terça de Carnaval é tratada como feriado/ponto facultativo: se minha semana, plantão 08:00–20:00; se fora da minha semana, folga.
+- Eventos com título “Quarta-feira de Cinzas” ou “Cinzas” definem eh_cinzas=1 e têm prioridade sobre a regra de feriado.
+- Quarta de Cinzas na minha semana: trabalhando_agora=1 entre 08:00–18:00; plantao_agora=1 somente entre 08:00–12:00. Resultado: 08–12 perfil de plantão; 12–18 perfil de trabalho normal. Fora da minha semana: trabalhando_agora=1 somente entre 12:00–18:00, plantao_agora=0.
+- O bloco de almoço exclui eh_cinzas=1, então na Quarta de Cinzas não cria Descanso 12–14, coerente com início do trabalho normal às 12.
+
+ALARMES
+- Em dia normal da minha semana: seg-sex 07:00; sábado sem alarme; domingo 07:45.
+- Fora da minha semana: seg-sáb 07:00; domingo sem alarme.
+- Se amanhã é feriado ou Cinzas: se minha semana, 07:45; se não é minha semana, sem alarme.
+- Assim: segunda de Carnaval segue alarme normal 07:00; terça de Carnaval na minha semana 07:45 e fora da minha semana sem alarme; Quarta de Cinzas na minha semana 07:45 e fora da minha semana sem alarme.
+
+PENDÊNCIAS REAIS
+1. Automação Alarme precisa ganhar gatilho às 14:00. Atualmente possui 08:00, 12:00, 18:00, 20:00 e 22:00. Isso é necessário para sair do Descanso do almoço e reaplicar o perfil de trabalho às 14:00.
+2. Estado de som de trabalho normal precisa ser tornado determinístico. O perfil Descanso define Toque 100%, Mídia 0% e Alertas/Sons do Sistema 0%. Quando plantao_agora=0, o bloco atual apenas ativa Modo Silencioso; não redefine Mídia nem Alertas. Assim, após Descanso, eles podem permanecer em 0%. É necessário definir no ramo de trabalho normal quais níveis devem ser restaurados. Alertas/Sons do Sistema podem ser restaurados a 100% com Modo Silencioso ligado. Para Mídia, deve-se escolher o volume normal desejado pelo usuário; 100% não é obrigatório e pode ser excessivo.
+3. Verificação externa final: garantir que o Foco Sono não tenha programação própria no iOS/Saúde, já que a Rotina não usa mais Sono.
+
+Fora dessas pendências, a lógica de escala, Carnaval, Cinzas, feriados, sábados, domingos e alarmes está alinhada às regras informadas pelo usuário.
