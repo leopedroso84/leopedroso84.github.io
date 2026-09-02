@@ -1,0 +1,13 @@
+AUDITORIA DE ESCALA — ROTINA 324233eacac44a4fa103464f0efd6a5d — 2026-09-02
+
+- Data-base do ciclo: 17/08/2026 00:00.
+- O ciclo usa módulo 21 e considera minha_semana quando o resultado está entre 0 e 6. Portanto as semanas de plantão são 17–23/08, 07–13/09, 28/09–04/10, repetindo a cada 21 dias.
+- Fora da semana de plantão: segunda a sexta trabalhando_agora entre 08:00 e 18:00; sábado entre 08:00 e 12:00; domingo sem trabalho.
+- Na semana de plantão, em dias normais: segunda a sexta trabalhando_agora entre 08:00 e 18:00; sábado entre 12:00 e 20:00; domingo entre 08:00 e 20:00.
+- Em feriado comum dentro da semana de plantão: trabalhando_agora e plantao_agora entre 08:00 e 20:00, independentemente do dia da semana. Em feriado fora da semana de plantão, trabalhando_agora e plantao_agora permanecem 0.
+- plantao_agora em dia normal da semana de plantão: sábado 12:00–20:00; domingo 08:00–20:00; segunda a sexta 0.
+- Alarmes: antes de decidir o dia seguinte, desativa Escala 07:00 e Escala 07:45. Se amanhã for feriado/Cinzas e for minha semana, ativa 07:45; se não for minha semana, não ativa alarme. Em dia normal da minha semana: segunda a sexta ativa 07:00, sábado não ativa alarme, domingo ativa 07:45. Fora da minha semana: segunda a sábado ativa 07:00 e domingo não ativa alarme.
+- O almoço é tratado separadamente às 12:00: se trabalhando_agora=1, plantao_agora=0 e não for feriado/Cinzas, ativa Descanso por 2 horas, até aproximadamente 14:00. Por isso trabalhando_agora pode permanecer 1 no intervalo 12–14 sem prejudicar o estado final, desde que a Rotina seja executada novamente às 14:00.
+- A Automação Alarme atualmente não possui gatilho às 14:00; possui 08:00, 12:00, 18:00, 20:00 e 22:00. É necessário acrescentar 14:00.
+- Som: no ramo plantao_agora=1, Modo Silencioso OFF, Toque 100%, Mídia 100%, Alertas/Sons do Sistema 100%. No Caso Contrário atual existe apenas Modo Silencioso ON; ele NÃO restaura Mídia e Alertas para 100%. Como o perfil Descanso deixa Mídia e Alertas em 0%, ao entrar no trabalho normal às 08:00/14:00 eles podem continuar zerados. Para o comportamento descrito pelo usuário (sem Foco, apenas silencioso, sem outras restrições), deve-se acrescentar Mídia 100% e Alertas/Sons do Sistema 100% no Caso Contrário do bloco de plantão.
+- Regra antiga especial de Quarta-feira de Cinzas permanece diferente de feriado comum: na minha semana, trabalhando_agora 08:00–18:00 e plantao_agora 08:00–12:00; fora da minha semana, trabalhando_agora 12:00–18:00. O alarme em Cinzas na minha semana é 07:45. Essa exceção precisa ser confirmada pelo usuário, pois não corresponde à nova regra geral de 'qualquer feriado na semana de plantão = domingo de plantão 08:00–20:00'.
