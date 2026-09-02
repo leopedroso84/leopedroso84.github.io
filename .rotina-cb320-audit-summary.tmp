@@ -1,0 +1,9 @@
+AUDITORIA ROTINA cb32010322bc4192bf7532efb1baef03 — 2026-09-02
+
+- Nome: Rotina; assinatura iCloud: APPROVED; 194 ações; 0 gatilhos.
+- Comparação com 324233eacac44a4fa103464f0efd6a5d: nenhuma diferença estrutural encontrada; as duas versões são idênticas após normalização de UUIDs/GroupingIdentifier.
+- Nenhuma ocorrência de Sono, sono_0700 ou sono_0745.
+- Bloco de plantão: Modo Silencioso OFF; Toque 100%; Mídia 100%; Alertas e Sons do Sistema 100%.
+- Caso contrário do plantão: apenas Modo Silencioso ON.
+- Bloco final Descanso: Modo Silencioso OFF; Toque 100%; Mídia 0%; Alertas e Sons do Sistema 0%.
+- Ponto lógico a resolver: ao sair de Descanso para horário normal de trabalho, o ramo de trabalho apenas liga o Modo Silencioso e desativa o Foco; ele não restaura Mídia/Alertas, portanto esses volumes podem permanecer em 0% herdados do Descanso. Para corresponder à regra 'trabalho sem restrição, apenas silencioso', é preciso definir como restaurar Mídia/Alertas ao entrar no trabalho.
