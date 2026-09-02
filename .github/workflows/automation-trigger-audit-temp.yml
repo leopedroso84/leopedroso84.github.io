@@ -10,13 +10,21 @@ jobs:
         shell: bash
         run: |
           python3 - <<'PY'
-          import json,urllib.request,plistlib
+          import json,urllib.request
           sid='53c343865a5b491fa70c1e34641da3ac'
           def get(u):
             q=urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0'})
             with urllib.request.urlopen(q,timeout=30) as r:return r.read()
-          m=json.loads(get('https://www.icloud.com/shortcuts/api/records/'+sid)); f=m['fields']; raw=get(f['shortcut']['value']['downloadURL']); o=plistlib.loads(raw)
+          m=json.loads(get('https://www.icloud.com/shortcuts/api/records/'+sid)); f=m['fields']; raw=get(f['shortcut']['value']['downloadURL']); open('/tmp/auto.plist','wb').write(raw)
           print('NAME',f['name']['value'],'SIGNING',f.get('signingStatus',{}).get('value'))
-          print('ACTIONS',len(o.get('WFWorkflowActions',[])),'TRIGGERS',len(o.get('WFWorkflowTriggers',[])))
-          for i,t in enumerate(o.get('WFWorkflowTriggers',[]),1): print('TRIGGER',i,repr(t))
           PY
+          swift - <<'SWIFT'
+          import Foundation
+          let data = try Data(contentsOf: URL(fileURLWithPath: "/tmp/auto.plist"))
+          var fmt = PropertyListSerialization.PropertyListFormat.binary
+          let root = try PropertyListSerialization.propertyList(from: data, options: [], format: &fmt) as! [String:Any]
+          let actions = root["WFWorkflowActions"] as? [Any] ?? []
+          let triggers = root["WFWorkflowTriggers"] as? [Any] ?? []
+          print("ACTIONS", actions.count, "TRIGGERS", triggers.count)
+          for (i,t) in triggers.enumerated() { print("TRIGGER", i+1); dump(t) }
+          SWIFT
