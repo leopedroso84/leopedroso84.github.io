@@ -1,8 +1,0 @@
-AUDITORIA DA AUTOMAÇÃO ALARME 53c343865a5b491fa70c1e34641da3ac — 2026-09-02
-
-- Nome: Automação Alarme
-- Assinatura iCloud: APPROVED
-- 1 ação e 5 gatilhos de horário.
-- Os cinco horários locais codificados correspondem a 08:00, 12:00, 18:00, 20:00 e 22:00.
-- Não existe gatilho às 14:00.
-- Isso é relevante porque o bloco atual de almoço ativa o Foco Descanso até aproximadamente 14:00, mas não existe uma nova execução da Rotina nesse momento para restaurar os estados de som após o término automático do Foco.
