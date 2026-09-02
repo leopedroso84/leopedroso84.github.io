@@ -1,0 +1,22 @@
+name: Automation Trigger Audit Temp
+on:
+  push:
+    branches: [main]
+jobs:
+  audit:
+    runs-on: macos-latest
+    steps:
+      - name: Audit
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,urllib.request,plistlib
+          sid='53c343865a5b491fa70c1e34641da3ac'
+          def get(u):
+            q=urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0'})
+            with urllib.request.urlopen(q,timeout=30) as r:return r.read()
+          m=json.loads(get('https://www.icloud.com/shortcuts/api/records/'+sid)); f=m['fields']; raw=get(f['shortcut']['value']['downloadURL']); o=plistlib.loads(raw)
+          print('NAME',f['name']['value'],'SIGNING',f.get('signingStatus',{}).get('value'))
+          print('ACTIONS',len(o.get('WFWorkflowActions',[])),'TRIGGERS',len(o.get('WFWorkflowTriggers',[])))
+          for i,t in enumerate(o.get('WFWorkflowTriggers',[]),1): print('TRIGGER',i,repr(t))
+          PY
