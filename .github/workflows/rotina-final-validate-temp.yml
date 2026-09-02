@@ -12,35 +12,35 @@ jobs:
           set -euo pipefail
           rm -rf out && mkdir -p out/RAW
           python3 - <<'PY'
-          import json,urllib.request,subprocess,hashlib,os,re
+          import json,urllib.request,hashlib,os,re,plistlib
           ids=[('53c343865a5b491fa70c1e34641da3ac','https://www.icloud.com/shortcuts/53c343865a5b491fa70c1e34641da3ac'),('f977f1a652ed47a4b130dda848b4ee06','https://www.icloud.com/shortcuts/f977f1a652ed47a4b130dda848b4ee06'),('51f9a39f007647848305603c965cdf5c','https://www.icloud.com/shortcuts/51f9a39f007647848305603c965cdf5c'),('37ebea5d0a1f42fc803f0440203fdcd1','https://www.icloud.com/shortcuts/37ebea5d0a1f42fc803f0440203fdcd1')]
           def fetch(sid):
             req=urllib.request.Request('https://www.icloud.com/shortcuts/api/records/'+sid,headers={'User-Agent':'Mozilla/5.0'})
             with urllib.request.urlopen(req,timeout=30) as r:m=json.load(r)
-            f=m['fields'];
+            f=m['fields']
             def dl(v):
               req=urllib.request.Request(v['downloadURL'],headers={'User-Agent':'Mozilla/5.0'})
               with urllib.request.urlopen(req,timeout=30) as r:return r.read()
             raw=dl(f['shortcut']['value']); sv=f.get('signedShortcut',{}).get('value'); signed=dl(sv) if isinstance(sv,dict) and sv.get('downloadURL') else raw
             return m,raw,signed
-          def plist(raw,p):
-            open('/tmp/'+p+'.plist','wb').write(raw); subprocess.run(['/usr/bin/plutil','-convert','json','-o','/tmp/'+p+'.json','/tmp/'+p+'.plist'],check=True); return json.load(open('/tmp/'+p+'.json'))
-          om,oraw,_=fetch('1f1656fb583d4363a68b0adf518ca287'); old=plist(oraw,'old'); oa=old['WFWorkflowActions']
-          nm,nraw,nsigned=fetch('f977f1a652ed47a4b130dda848b4ee06'); new=plist(nraw,'new'); na=new['WFWorkflowActions']
+          def plist(raw): return plistlib.loads(raw)
+          om,oraw,_=fetch('1f1656fb583d4363a68b0adf518ca287'); old=plist(oraw); oa=old['WFWorkflowActions']
+          nm,nraw,nsigned=fetch('f977f1a652ed47a4b130dda848b4ee06'); new=plist(nraw); na=new['WFWorkflowActions']
           def scrub(x):
             if isinstance(x,dict): return {k:scrub(v) for k,v in x.items() if 'uuid' not in k.lower() and k!='GroupingIdentifier'}
             if isinstance(x,list): return [scrub(v) for v in x]
             return x
-          print('NEW_NAME',nm['fields']['name']['value']); print('NEW_SIGNING',nm['fields']['signingStatus']['value']); print('OLD_ACTIONS',len(oa),'NEW_ACTIONS',len(na)); print('PREFIX194_IDENTICAL', [scrub(x) for x in oa]==[scrub(x) for x in na[:len(oa)]])
-          for i,a in enumerate(na[len(oa):],len(oa)+1): print('TAIL',i,a.get('WFWorkflowActionIdentifier',''),json.dumps(a.get('WFWorkflowActionParameters',{}),ensure_ascii=False,sort_keys=True))
-          if len(na)!=201 or [scrub(x) for x in oa] != [scrub(x) for x in na[:194]]: raise SystemExit('VALIDATION_FAIL_STRUCTURE')
+          prefix=[scrub(x) for x in oa]==[scrub(x) for x in na[:194]]
+          print('NEW_NAME',nm['fields']['name']['value']); print('NEW_SIGNING',nm['fields']['signingStatus']['value']); print('OLD_ACTIONS',len(oa),'NEW_ACTIONS',len(na)); print('PREFIX194_IDENTICAL',prefix)
+          for i,a in enumerate(na[194:],195): print('TAIL',i,a.get('WFWorkflowActionIdentifier',''),repr(a.get('WFWorkflowActionParameters',{})))
+          if len(na)!=201 or not prefix: raise SystemExit('VALIDATION_FAIL_STRUCTURE')
           rows=[]
           for idx,(sid,url) in enumerate(ids,1):
             m,raw,signed=fetch(sid); f=m['fields']; name=f['name']['value']; safe=re.sub(r'[\\/:*?"<>|]+',' - ',name)
             open(f'out/{idx:02d} - {safe}.shortcut','wb').write(signed); open(f'out/RAW/{idx:02d} - {safe} - unsigned.bplist','wb').write(raw)
-            obj=plist(raw,'s'+str(idx)); rows.append({'idx':idx,'name':name,'id':sid,'url':url,'signing':f['signingStatus']['value'],'actions':len(obj.get('WFWorkflowActions',[])),'triggers':len(obj.get('WFWorkflowTriggers',[])),'signed_sha256':hashlib.sha256(signed).hexdigest(),'raw_sha256':hashlib.sha256(raw).hexdigest()})
+            obj=plist(raw); rows.append({'idx':idx,'name':name,'id':sid,'url':url,'signing':f['signingStatus']['value'],'actions':len(obj.get('WFWorkflowActions',[])),'triggers':len(obj.get('WFWorkflowTriggers',[])),'signed_sha256':hashlib.sha256(signed).hexdigest(),'raw_sha256':hashlib.sha256(raw).hexdigest()})
           json.dump({'shortcuts':rows},open('out/manifest.json','w'),ensure_ascii=False,indent=2)
-          open('out/LEIA-ME.txt','w').write('Backup completo dos 4 atalhos do iPhone. Gerado em 2026-09-02. Rotina validada com 201 ações; 194 originais preservadas e bloco final de Descanso corrigido.\n')
+          open('out/LEIA-ME.txt','w').write('Backup completo dos 4 atalhos do iPhone. Gerado em 2026-09-02. Rotina validada com 201 ações; 194 originais preservadas; Modo Silencioso do sistema do iPhone; Toque 100%; Mídia 0%.\n')
           print('ROWS',json.dumps(rows,ensure_ascii=False))
           PY
       - uses: actions/upload-artifact@v4
