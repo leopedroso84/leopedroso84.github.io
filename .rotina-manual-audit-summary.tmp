@@ -1,0 +1,16 @@
+AUDITORIA ROTINA 324233eacac44a4fa103464f0efd6a5d — 2026-09-02
+
+- Nome: Rotina
+- Assinatura iCloud: APPROVED
+- 194 ações, 0 gatilhos.
+- Comparada com a versão pré-edição 994ba242ad604eedb136dc89355b9af8 (202 ações) e com a base original 1f1656fb583d4363a68b0adf518ca287 (194 ações).
+- Não há nenhuma ocorrência de Foco Sono, texto Sono, sono_0700 ou sono_0745 na versão nova.
+- As únicas diferenças em relação à versão pré-edição são as alterações manuais planejadas: inclusão de Mídia 100% e Alertas/Sons do Sistema 100% no ramo de plantão; substituição da lógica noturna Descanso OFF + Sono ON por Descanso ON; remoção do comando que desligava Sono; remoção dos quatro cálculos/variáveis sono_0700/sono_0745; remoção dos quatro comandos que ativavam Sono junto dos alarmes.
+- Todo o trecho anterior ao bloco de plantão permaneceu inalterado, portanto os cálculos de escala, feriados, trabalhando_agora e plantao_agora permanecem como antes.
+- Plantão: Modo Silencioso do iPhone OFF (com.apple.ShortcutsActions.SetSilentModeAction / com.apple.ShortcutsActions), Toque 100%, Mídia 100%, Alertas e Sons do Sistema 100%.
+- Caso contrário do plantão: Modo Silencioso do iPhone ON.
+- Foco: entre 22h e 07:59 ativa Descanso; entre 08h e 21:59, trabalhando_agora=1 desativa Descanso e fora do trabalho ativa Descanso.
+- Alarmes Escala 07:00 e Escala 07:45 continuam presentes com as mesmas ações de ativação/desativação; somente os comandos de Foco Sono associados foram removidos. Como a lógica condicional dos alarmes não foi alterada, permanecem as regras anteriores: sábado da semana de plantão sem alarme de manhã; demais regras 07:00/07:45 preservadas.
+- Almoço: às 12h, se trabalhando_agora=1, plantao_agora=0, sem feriado e sem Cinzas, define fim_almoco como +2h e ativa Descanso até esse horário.
+- Bloco final Descanso: obtém Foco Atual; se Nome=Descanso, desativa Modo Silencioso do iPhone, Toque 100%, Mídia 0%, Alertas e Sons do Sistema 0%.
+- PENDÊNCIA EXTERNA: a Automação Alarme atualmente não possui execução às 14:00. É necessário acrescentar 14:00 para a Rotina reaplicar o estado de trabalho assim que o Descanso do almoço terminar. Também deve ser verificado se o Foco Sono possui programação própria fora do atalho, para que não volte a ser ativado independentemente.
