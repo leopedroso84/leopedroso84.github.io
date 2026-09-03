@@ -1,0 +1,76 @@
+name: Audit Global Storage Final2 Temp
+on:
+  push:
+    paths:
+      - '.github/workflows/audit-global-storage-final2-temp.yml'
+jobs:
+  audit:
+    runs-on: macos-26
+    steps:
+      - name: Audit shortcuts with Foundation fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/plistjson.swift <<'SWIFT'
+          import Foundation
+          func clean(_ value: Any) -> Any {
+            if let d = value as? Date { return ["__date__": d.timeIntervalSinceReferenceDate] }
+            if let d = value as? Data { return ["__data__": d.base64EncodedString()] }
+            if let a = value as? [Any] { return a.map { clean($0) } }
+            if let m = value as? [String:Any] { var out:[String:Any]=[:]; for (k,v) in m { out[k]=clean(v) }; return out }
+            if let n = value as? NSNumber { return n }
+            if let s = value as? NSString { return s as String }
+            return String(describing:value)
+          }
+          let data=try Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[1]))
+          var fmt=PropertyListSerialization.PropertyListFormat.binary
+          let obj=try PropertyListSerialization.propertyList(from:data,options:[],format:&fmt)
+          let j=try JSONSerialization.data(withJSONObject:clean(obj),options:[])
+          FileHandle.standardOutput.write(j)
+          SWIFT
+          python3 - <<'PY'
+          import urllib.request,json,plistlib,difflib,tempfile,subprocess,os
+          IDS={'new1':'83d7a82c2e9c49cd8256999525b1acdb','new2':'10ce7505e52c4a6c837267fc6d67c727','old_rotina':'3fba15fcfa304cd29480865558502fa5','old_auto':'d92cb4884b9f417ba84976a9335bcbec'}
+          def g(u): return urllib.request.urlopen(urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0'}),timeout=40).read()
+          def parse(raw):
+            try:return plistlib.loads(raw)
+            except Exception:
+              fd,path=tempfile.mkstemp(suffix='.shortcut'); os.close(fd); open(path,'wb').write(raw)
+              try:return json.loads(subprocess.check_output(['swift','/tmp/plistjson.swift',path],timeout=90))
+              finally: os.unlink(path)
+          def load(s):
+            m=json.loads(g('https://www.icloud.com/shortcuts/api/records/'+s)); f=m['fields']; o=parse(g(f['shortcut']['value']['downloadURL']))
+            return f['name']['value'],f.get('signingStatus',{}).get('value'),o
+          D={k:load(v) for k,v in IDS.items()}
+          print('=== META ===')
+          for k,(n,s,o) in D.items(): print(k,n,s,len(o.get('WFWorkflowActions',[])),len(o.get('WFWorkflowTriggers',[])))
+          def storage(o):
+            for i,a in enumerate(o.get('WFWorkflowActions',[])):
+              ident=a.get('WFWorkflowActionIdentifier',''); p=a.get('WFWorkflowActionParameters',{})
+              if ident in ('is.workflow.actions.setstoredcontent','is.workflow.actions.getstoredcontent'):
+                print(i,ident,'key=',p.get('WFStoredContentKey'),'input=',p.get('WFInput'),'global=',p.get('WFStoredContentGlobalValue','MISSING'))
+          for k in ('new1','new2'):
+            n,s,o=D[k]; print('=== STORAGE',k,n,'==='); storage(o)
+            print('=== TRIGGERS',k,n,len(o.get('WFWorkflowTriggers',[])),'===')
+            for t in o.get('WFWorkflowTriggers',[]): print(t)
+          DROP={'UUID','GroupingIdentifier','OutputUUID','WFTriggerUUID'}
+          def clean(x):
+            if isinstance(x,dict): return {k:clean(v) for k,v in x.items() if k not in DROP and 'uuid' not in k.lower()}
+            if isinstance(x,list): return [clean(v) for v in x]
+            return x
+          def js(x):return json.dumps(clean(x),sort_keys=True,ensure_ascii=False,default=str,separators=(',',':'))
+          def diff(old,new,label):
+            oa=old.get('WFWorkflowActions',[]); na=new.get('WFWorkflowActions',[])
+            sm=difflib.SequenceMatcher(a=[js(a) for a in oa],b=[js(a) for a in na],autojunk=False)
+            print('=== DIFF',label,'===')
+            for tag,i1,i2,j1,j2 in sm.get_opcodes():
+              if tag!='equal':
+                print(tag,'OLD',i1,i2,'NEW',j1,j2)
+                for i in range(i1,i2): print(' OLD',i,oa[i].get('WFWorkflowActionIdentifier'),js(oa[i].get('WFWorkflowActionParameters',{})))
+                for j in range(j1,j2): print(' NEW',j,na[j].get('WFWorkflowActionIdentifier'),js(na[j].get('WFWorkflowActionParameters',{})))
+            print('TRIGGERS_EQUAL',sorted(js(x) for x in old.get('WFWorkflowTriggers',[]))==sorted(js(x) for x in new.get('WFWorkflowTriggers',[])))
+          for k in ('new1','new2'):
+            n,s,o=D[k]
+            if n=='Rotina': diff(D['old_rotina'][2],o,'ROTINA')
+            elif n=='Automação Rotina': diff(D['old_auto'][2],o,'AUTO')
+          PY
