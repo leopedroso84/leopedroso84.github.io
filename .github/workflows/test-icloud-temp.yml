@@ -1,0 +1,7 @@
+name: Test iCloud Temp
+on: [push]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -L -s https://www.icloud.com/shortcuts/api/records/6725abf66e3b4de89cc8dfab7b340791 | head -c 200
