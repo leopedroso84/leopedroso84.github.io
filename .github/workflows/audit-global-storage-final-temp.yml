@@ -1,0 +1,64 @@
+name: Audit Global Storage Final Temp
+on:
+  push:
+    paths:
+      - '.github/workflows/audit-global-storage-final-temp.yml'
+jobs:
+  audit:
+    runs-on: macos-26
+    steps:
+      - name: Audit shortcuts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import urllib.request,json,plistlib,difflib
+          IDS={
+            'new1':'83d7a82c2e9c49cd8256999525b1acdb',
+            'new2':'10ce7505e52c4a6c837267fc6d67c727',
+            'old_rotina':'3fba15fcfa304cd29480865558502fa5',
+            'old_auto':'d92cb4884b9f417ba84976a9335bcbec'
+          }
+          def g(u):
+            return urllib.request.urlopen(urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0'}),timeout=40).read()
+          def load(s):
+            m=json.loads(g('https://www.icloud.com/shortcuts/api/records/'+s)); f=m['fields']
+            o=plistlib.loads(g(f['shortcut']['value']['downloadURL']))
+            return f['name']['value'], f.get('signingStatus',{}).get('value'), o
+          D={k:load(v) for k,v in IDS.items()}
+          print('=== META ===')
+          for k,(n,s,o) in D.items(): print(k,n,s,len(o.get('WFWorkflowActions',[])),len(o.get('WFWorkflowTriggers',[])))
+          def storage_actions(o):
+            out=[]
+            for i,a in enumerate(o.get('WFWorkflowActions',[])):
+              ident=a.get('WFWorkflowActionIdentifier',''); p=a.get('WFWorkflowActionParameters',{})
+              if ident in ('is.workflow.actions.setstoredcontent','is.workflow.actions.getstoredcontent'):
+                out.append((i,ident,p.get('WFStoredContentKey'),p.get('WFInput'),p.get('WFStoredContentGlobalValue','MISSING')))
+            return out
+          for k,(n,s,o) in D.items():
+            if k.startswith('new'):
+              print('=== STORAGE',k,n,'===')
+              for row in storage_actions(o): print(row)
+              print('=== TRIGGERS',k,n,'===')
+              for t in o.get('WFWorkflowTriggers',[]): print(t)
+          # semantic action diffs, ignoring UUID/group IDs
+          DROP={'UUID','GroupingIdentifier','OutputUUID','WFTriggerUUID'}
+          def clean(x):
+            if isinstance(x,dict): return {k:clean(v) for k,v in x.items() if k not in DROP and 'uuid' not in k.lower()}
+            if isinstance(x,list): return [clean(v) for v in x]
+            return x
+          def js(x): return json.dumps(clean(x),sort_keys=True,ensure_ascii=False,default=str,separators=(',',':'))
+          def diff(old,new,label):
+            oa=old.get('WFWorkflowActions',[]); na=new.get('WFWorkflowActions',[])
+            sm=difflib.SequenceMatcher(a=[js(a) for a in oa],b=[js(a) for a in na],autojunk=False)
+            print('=== DIFF',label,'===')
+            for tag,i1,i2,j1,j2 in sm.get_opcodes():
+              if tag!='equal':
+                print(tag,'OLD',i1,i2,'NEW',j1,j2)
+                for i in range(i1,i2): print(' OLD',i,oa[i].get('WFWorkflowActionIdentifier'),js(oa[i].get('WFWorkflowActionParameters',{})))
+                for j in range(j1,j2): print(' NEW',j,na[j].get('WFWorkflowActionIdentifier'),js(na[j].get('WFWorkflowActionParameters',{})))
+            print('TRIGGERS_EQUAL',sorted(js(x) for x in old.get('WFWorkflowTriggers',[]))==sorted(js(x) for x in new.get('WFWorkflowTriggers',[])))
+          for k,(n,s,o) in [('new1',*D['new1']),('new2',*D['new2'])]:
+            if n=='Rotina': diff(D['old_rotina'][2],o,'ROTINA')
+            if n=='Automação Rotina': diff(D['old_auto'][2],o,'AUTO')
+          PY
