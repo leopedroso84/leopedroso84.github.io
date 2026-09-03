@@ -12,88 +12,46 @@ jobs:
               if let d = value as? Date { return ["__date__": d.timeIntervalSinceReferenceDate] }
               if let d = value as? Data { return ["__data__": d.base64EncodedString()] }
               if let a = value as? [Any] { return a.map { clean($0) } }
-              if let m = value as? [String: Any] {
-                  var out:[String:Any] = [:]
-                  for (k,v) in m { out[k] = clean(v) }
-                  return out
-              }
+              if let m = value as? [String: Any] { var out:[String:Any]=[:]; for (k,v) in m { out[k]=clean(v) }; return out }
               if let n = value as? NSNumber { return n }
               if let s = value as? NSString { return s as String }
-              return String(describing: value)
+              return String(describing:value)
           }
-          let url = URL(fileURLWithPath: CommandLine.arguments[1])
-          let data = try Data(contentsOf: url)
-          var fmt = PropertyListSerialization.PropertyListFormat.binary
-          let obj = try PropertyListSerialization.propertyList(from: data, options: [], format: &fmt)
-          let cleaned = clean(obj)
-          let j = try JSONSerialization.data(withJSONObject: cleaned, options: [])
+          let data=try Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[1]))
+          var fmt=PropertyListSerialization.PropertyListFormat.binary
+          let obj=try PropertyListSerialization.propertyList(from:data,options:[],format:&fmt)
+          let j=try JSONSerialization.data(withJSONObject:clean(obj),options:[])
           FileHandle.standardOutput.write(j)
           SWIFT
           python3 - <<'PY'
-          import urllib.request,json,plistlib,tempfile,subprocess,os,difflib,re
-          PROVIDED=['f8a38383165c4cd1a44406a63d593391','ce76a90d14824325a8cc2f5aa7aad5ef','8530a6183ba8476da69d144e474c245f']
-          BASES={
-            'Rotina':'b6a37d5a0db740d5b63f4c39da154798',
-            'Automação Alarme':'050b30849fb74a498890e38fdaca312a',
-            'Gerenciamento de Rede e Bateria':'37ebea5d0a1f42fc803f0440203fdcd1'
-          }
-          def get(u):
-              req=urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0'})
-              return urllib.request.urlopen(req,timeout=40).read()
-          def parse(raw):
+          import urllib.request,json,plistlib,tempfile,subprocess,os
+          NEW='f8a38383165c4cd1a44406a63d593391'; OLD='050b30849fb74a498890e38fdaca312a'
+          def g(u):return urllib.request.urlopen(urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0'}),timeout=40).read()
+          def p(raw):
               try:return plistlib.loads(raw)
               except Exception:
-                  fd,path=tempfile.mkstemp(suffix='.shortcut'); os.close(fd); open(path,'wb').write(raw)
+                  fd,path=tempfile.mkstemp(suffix='.shortcut');os.close(fd);open(path,'wb').write(raw)
                   try:return json.loads(subprocess.check_output(['swift','/tmp/plistjson.swift',path],timeout=90))
                   finally:os.unlink(path)
-          def load(sid):
-              meta=json.loads(get('https://www.icloud.com/shortcuts/api/records/'+sid)); f=meta['fields']; raw=get(f['shortcut']['value']['downloadURL']); o=parse(raw)
-              return {'id':sid,'name':f['name']['value'],'sign':f.get('signingStatus',{}).get('value'),'o':o,'a':o.get('WFWorkflowActions',[]),'t':o.get('WFWorkflowTriggers',[])}
+          def load(s):
+              m=json.loads(g('https://www.icloud.com/shortcuts/api/records/'+s));f=m['fields'];o=p(g(f['shortcut']['value']['downloadURL']))
+              return f['name']['value'],f.get('signingStatus',{}).get('value'),o
           def clean(x):
               if isinstance(x,dict):return {k:clean(v) for k,v in x.items() if 'uuid' not in k.lower()}
               if isinstance(x,list):return [clean(v) for v in x]
               if isinstance(x,bytes):return x.hex()
               return x
           def js(x):return json.dumps(clean(x),sort_keys=True,ensure_ascii=False,default=str,separators=(',',':'))
-          def vals(x):
-              out=[]
-              def w(v):
-                  if isinstance(v,str) and v not in out:out.append(v)
-                  elif isinstance(v,dict):
-                      for z in v.values():w(z)
-                  elif isinstance(v,list):
-                      for z in v:w(z)
-              w(x);return out
-          def brief(a):
-              p=a.get('WFWorkflowActionParameters',{})
-              return {'id':a.get('WFWorkflowActionIdentifier'),'vals':vals(p)[:20],'p':clean(p)}
-          cur=[load(x) for x in PROVIDED]
-          print('IDENTIFIED',[(x['id'],x['name'],x['sign'],len(x['a']),len(x['t'])) for x in cur])
-          by={x['name']:x for x in cur}
-          print('NAME_SET',sorted(by))
-          for name,c in by.items():
-              b=load(BASES[name]) if name in BASES else None
-              print('\n###',name,'###')
-              if not b: print('NO_BASE'); continue
-              print('META current',len(c['a']),len(c['t']),'base',len(b['a']),len(b['t']),'sign',c['sign'])
-              xa=[js(a) for a in b['a']]; ya=[js(a) for a in c['a']]
-              ops=[op for op in difflib.SequenceMatcher(a=xa,b=ya,autojunk=False).get_opcodes() if op[0]!='equal']
-              print('ACTION_DIFF_OPS',ops)
-              for tag,i1,i2,j1,j2 in ops:
-                  print('DIFF',tag,'BASE',i1,i2,'NEW',j1,j2)
-                  for i in range(max(0,i1-2),min(len(b['a']),i2+2)):print('B',i,json.dumps(brief(b['a'][i]),ensure_ascii=False,default=str)[:5000])
-                  for j in range(max(0,j1-2),min(len(c['a']),j2+2)):print('N',j,json.dumps(brief(c['a'][j]),ensure_ascii=False,default=str)[:5000])
-              # trigger summary
-              if name=='Automação Alarme':
-                  print('TRIGGERS_CURRENT')
-                  for i,t in enumerate(c['t']):print('T',i,js(t))
-              # relevant actions all current
-              print('RELEVANT_CURRENT')
-              needles=['descanso_noturno','setstoredcontent','getstoredcontent','setsilentmodeaction','dnd.set','runworkflow','charger','power','battery','volume']
-              for i,a in enumerate(c['a']):
-                  s=js(a).lower()
-                  if any(n in s for n in needles):print('R',i,json.dumps(brief(a),ensure_ascii=False,default=str)[:5000])
-              # preserve exact action matches stats excluding new additions
-              common=sum(1 for z in ya if z in set(xa))
-              print('COMMON_ACTION_COUNT_APPROX',common,'of',len(c['a']))
+          nn,ns,n=load(NEW);on,osig,o=load(OLD)
+          print('NEW_META',nn,ns,len(n.get('WFWorkflowActions',[])),len(n.get('WFWorkflowTriggers',[])))
+          print('OLD_META',on,osig,len(o.get('WFWorkflowActions',[])),len(o.get('WFWorkflowTriggers',[])))
+          print('=== NEW ACTIONS ===')
+          for i,a in enumerate(n.get('WFWorkflowActions',[])):
+              print('A',i,a.get('WFWorkflowActionIdentifier'),json.dumps(clean(a.get('WFWorkflowActionParameters',{})),ensure_ascii=False,default=str)[:8000])
+          print('=== NEW TRIGGERS ===')
+          for i,t in enumerate(n.get('WFWorkflowTriggers',[])):print('T',i,js(t))
+          print('=== OLD ACTIONS ===')
+          for i,a in enumerate(o.get('WFWorkflowActions',[])):print('OA',i,a.get('WFWorkflowActionIdentifier'),json.dumps(clean(a.get('WFWorkflowActionParameters',{})),ensure_ascii=False,default=str)[:3000])
+          print('=== OLD TRIGGERS ===')
+          for i,t in enumerate(o.get('WFWorkflowTriggers',[])):print('OT',i,js(t))
           PY
