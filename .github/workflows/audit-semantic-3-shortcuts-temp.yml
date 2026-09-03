@@ -1,0 +1,82 @@
+name: Audit Semantic 3 Shortcuts Temp
+on:
+  push:
+    paths:
+      - '.github/workflows/audit-semantic-3-shortcuts-temp.yml'
+jobs:
+  audit:
+    runs-on: macos-26
+    steps:
+      - name: Semantic audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/audit.py <<'PY'
+          import json, urllib.request, plistlib, difflib
+          IDS={
+            'rotina':'ce76a90d14824325a8cc2f5aa7aad5ef',
+            'rotina_old':'324233eacac44a4fa103464f0efd6a5d',
+            'rede':'8530a6183ba8476da69d144e474c245f',
+            'rede_old':'37ebea5d0a1f42fc803f0440203fdcd1',
+          }
+          def get(u): return urllib.request.urlopen(urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0'}),timeout=40).read()
+          def load(sid):
+            m=json.loads(get('https://www.icloud.com/shortcuts/api/records/'+sid)); f=m['fields']
+            return f['name']['value'],f.get('signingStatus',{}).get('value'),plistlib.loads(get(f['shortcut']['value']['downloadURL']))
+          D={k:load(v) for k,v in IDS.items()}
+          DROP={'UUID','GroupingIdentifier','OutputUUID','WFTriggerUUID'}
+          def clean(x):
+            if isinstance(x,dict): return {k:clean(v) for k,v in x.items() if k not in DROP}
+            if isinstance(x,list): return [clean(v) for v in x]
+            return x
+          def js(x): return json.dumps(clean(x),ensure_ascii=False,sort_keys=True,default=str,separators=(',',':'))
+          print('=== META ===')
+          for k,(n,s,o) in D.items(): print(k,n,s,len(o.get('WFWorkflowActions',[])),len(o.get('WFWorkflowTriggers',[])))
+          print('=== ROTINA ACTIONS 136-161 ===')
+          A=D['rotina'][2]['WFWorkflowActions']
+          for i in range(136,162):
+            a=A[i]; print(i,a.get('WFWorkflowActionIdentifier'),js(a.get('WFWorkflowActionParameters',{})))
+          print('=== ROTINA ACTIONS 186-END ===')
+          for i in range(186,len(A)):
+            a=A[i]; print(i,a.get('WFWorkflowActionIdentifier'),js(a.get('WFWorkflowActionParameters',{})))
+          print('=== ROTINA CHANGES VS OLD ===')
+          old=D['rotina_old'][2]['WFWorkflowActions']
+          sa=[js(a) for a in old]; sb=[js(a) for a in A]
+          sm=difflib.SequenceMatcher(a=sa,b=sb,autojunk=False)
+          for tag,i1,i2,j1,j2 in sm.get_opcodes():
+            if tag!='equal':
+              print('OP',tag,'OLD',i1,i2,'NEW',j1,j2)
+              for i in range(i1,i2): print(' OLD',i,old[i].get('WFWorkflowActionIdentifier'),js(old[i].get('WFWorkflowActionParameters',{})))
+              for j in range(j1,j2): print(' NEW',j,A[j].get('WFWorkflowActionIdentifier'),js(A[j].get('WFWorkflowActionParameters',{})))
+          print('=== SONO SEARCH ===')
+          hits=[]
+          def walk(x,path=''):
+            if isinstance(x,dict):
+              for k,v in x.items(): walk(v,path+'/'+str(k))
+            elif isinstance(x,list):
+              for i,v in enumerate(x): walk(v,path+'/'+str(i))
+            elif isinstance(x,str) and 'sono' in x.lower(): hits.append((path,x))
+          walk(D['rotina'][2]); print('SONO_HITS',len(hits));
+          for h in hits: print(h)
+          print('=== SILENT ACTIONS ===')
+          for i,a in enumerate(A):
+            if 'SilentModeAction' in a.get('WFWorkflowActionIdentifier',''):
+              print(i,a.get('WFWorkflowActionIdentifier'),js(a.get('WFWorkflowActionParameters',{})))
+          print('=== REDE SEMANTIC ===')
+          r=D['rede'][2]; ro=D['rede_old'][2]
+          ra=[js(a) for a in r.get('WFWorkflowActions',[])]; roa=[js(a) for a in ro.get('WFWorkflowActions',[])]
+          rt=[js(t) for t in r.get('WFWorkflowTriggers',[])]; rot=[js(t) for t in ro.get('WFWorkflowTriggers',[])]
+          print('REDE_ACTIONS_EQUAL',ra==roa)
+          print('REDE_TRIGGERS_EQUAL',sorted(rt)==sorted(rot))
+          if ra!=roa:
+            sm=difflib.SequenceMatcher(a=roa,b=ra,autojunk=False)
+            for tag,i1,i2,j1,j2 in sm.get_opcodes():
+              if tag!='equal':
+                print('REDE_OP',tag,'OLD',i1,i2,'NEW',j1,j2)
+                for i in range(i1,i2): print(' ROLD',i,ro['WFWorkflowActions'][i].get('WFWorkflowActionIdentifier'),js(ro['WFWorkflowActions'][i].get('WFWorkflowActionParameters',{})))
+                for j in range(j1,j2): print(' RNEW',j,r['WFWorkflowActions'][j].get('WFWorkflowActionIdentifier'),js(r['WFWorkflowActions'][j].get('WFWorkflowActionParameters',{})))
+          if sorted(rt)!=sorted(rot):
+            print('OLD_TRIGGERS'); [print(x) for x in sorted(rot)]
+            print('NEW_TRIGGERS'); [print(x) for x in sorted(rt)]
+          PY
+          python3 /tmp/audit.py
